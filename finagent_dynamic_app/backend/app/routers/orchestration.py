@@ -703,17 +703,22 @@ async def inject_task(
             
             # Create the new step
             logger.info("API: Creating new step from analysis")
-            new_step, insert_position = injector.create_new_step(
+            new_steps, insert_position = injector.create_new_step(
                 analysis=analysis,
                 current_steps=steps_data,
                 session_id=session_id,
                 plan_id=plan_id,
                 user_id=user_id
             )
-            logger.info("API: New step created", step_id=new_step.id, insert_position=insert_position)
+            logger.info(
+                "API: New steps created",
+                step_ids=[step.id for step in new_steps],
+                insert_position=insert_position,
+                step_count=len(new_steps)
+            )
             
             # Handle step reordering if inserting in middle
-            if insert_position < len(steps_data):
+            if insert_position <= len(steps_data):
                 logger.info(
                     "API: Reordering steps for middle insertion",
                     insert_position=insert_position,
@@ -723,24 +728,24 @@ async def inject_task(
                 # Update orders of all subsequent steps
                 for step in steps_data:
                     if step.order >= insert_position:
-                        step.order += 1
+                        step.order += len(new_steps)
                         await orchestrator.cosmos.update_step(step)
                         logger.info("API: Updated step order", step_id=step.id, new_order=step.order)
             
             # Persist the new step to Cosmos
-            logger.info("API: Persisting new step to Cosmos", step_id=new_step.id)
-            await orchestrator.cosmos.add_step(new_step)
-            logger.info("API: New step persisted successfully")
-            
-            logger.info(
-                "API: New step created and persisted",
-                step_id=new_step.id,
-                order=new_step.order,
-                action=new_step.action
-            )
-            
-            # Add step ID to response
-            analysis["new_step_id"] = new_step.id
+            for step in new_steps:
+                logger.info("API: Persisting new step to Cosmos", step_id=step.id)
+                await orchestrator.cosmos.add_step(step)
+                logger.info(
+                    "API: New step persisted",
+                    step_id=step.id,
+                    order=step.order,
+                    action=step.action
+                )
+
+            # Add step IDs to response
+            analysis["new_step_id"] = new_steps[0].id
+            analysis["new_step_ids"] = [step.id for step in new_steps]
             analysis["inserted_at"] = insert_position
         
         return analysis

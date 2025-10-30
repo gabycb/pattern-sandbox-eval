@@ -5,10 +5,11 @@ Microsoft Agent Framework compliant agent for company intelligence and market da
 Integrates real data providers (FMP, Yahoo Finance MCP Server) following MAF patterns.
 
 Uses native MAF function calling - tools are defined as Python functions with type hints,
-and the framework automatically handles function calling via Azure OpenAI.
+and the framework automatically handles function calling via Azure AI Agents.
 """
 
 import asyncio
+from contextlib import contextmanager
 from typing import Any, Dict, List, Optional, AsyncIterable, Annotated
 from datetime import date, timedelta
 import structlog
@@ -16,6 +17,7 @@ import json
 
 # Microsoft Agent Framework imports
 from agent_framework import BaseAgent, ChatMessage, Role, TextContent, AgentRunResponse, AgentRunResponseUpdate, AgentThread
+from agent_framework.observability import get_tracer
 from pydantic import Field
 
 # Import data providers
@@ -30,6 +32,7 @@ from helpers.fmputils import FMPUtils
 # Import MCP client for calling Yahoo Finance MCP server
 from mcp import ClientSession
 from mcp.client.sse import sse_client
+from opentelemetry.trace import SpanKind
 
 logger = structlog.get_logger(__name__)
 
@@ -85,6 +88,7 @@ Be data-driven, factual, and provide actionable insights."""
         self.chat_client = chat_client
         self.model = model
         self.system_prompt = self.SYSTEM_PROMPT
+        self._tracer = get_tracer()
         
         # Initialize data providers
         self.fmp_utils = FMPUtils(fmp_api_key) if fmp_api_key else None
@@ -217,7 +221,7 @@ Be data-driven, factual, and provide actionable insights."""
             data_sources=list(market_data.keys())
         )
         
-        # Execute with Azure OpenAI
+        # Execute with Azure AI Agents
         try:
             logger.info(f"CompanyAgent calling LLM for {ticker}")
             response = await self._execute_llm(prompt)
@@ -260,137 +264,244 @@ Be data-driven, factual, and provide actionable insights."""
                 f"Company analysis failed for {ticker}: {str(e)}"
             )
     
-    async def _fetch_data_for_task(self, ticker: str, task: str, context: Dict[str, Any]) -> Dict[str, Any]:
+    async def _fetch_data_for_task(
+        self,
+        ticker: str,
+        task: str,
+        context: Dict[str, Any],
+    ) -> Dict[str, Any]:
         """
         Intelligently call specific MCP tools based on what the task requests.
-        
+
         The planner's task should mention which function/tool to use.
         Examples:
           - "Function: get_recommendations" → Call get_recommendations MCP tool
           - "Function: get_yahoo_finance_news" → Call get_yahoo_finance_news MCP tool
           - "Gather analyst recommendations and latest news" → Call both tools
-        
+
         Args:
             ticker: Stock ticker symbol
             task: The specific task from the planner
             context: Additional context
-            
+
         Returns:
             Dictionary containing data from the called MCP tools
         """
-        data = {}
+        data: Dict[str, Any] = {}
         task_lower = task.lower()
-        
+
         try:
-            # Detect which tools to call based on task content
-            # Look for explicit "Function:" mentions from planner
-            tools_to_call = set()
-            
-            if "function: get_stock_info" in task_lower or "stock info" in task_lower or "stock quote" in task_lower or "current price" in task_lower:
+            tools_to_call: set[str] = set()
+            explicit_function_detected = False
+            default_inference_used = False
+
+            if (
+                "function: get_stock_info" in task_lower
+                or "stock info" in task_lower
+                or "stock quote" in task_lower
+                or "current price" in task_lower
+            ):
                 tools_to_call.add("get_stock_info")
-            
-            if "function: get_historical_stock_prices" in task_lower or "historical" in task_lower or "price history" in task_lower:
+                if "function: get_stock_info" in task_lower:
+                    explicit_function_detected = True
+
+            if (
+                "function: get_historical_stock_prices" in task_lower
+                or "historical" in task_lower
+                or "price history" in task_lower
+            ):
                 tools_to_call.add("get_historical_stock_prices")
-            
+                if "function: get_historical_stock_prices" in task_lower:
+                    explicit_function_detected = True
+
             if "function: get_yahoo_finance_news" in task_lower or "news" in task_lower:
                 tools_to_call.add("get_yahoo_finance_news")
-            
-            if "function: get_recommendations" in task_lower or "analyst" in task_lower or "recommendation" in task_lower:
+                if "function: get_yahoo_finance_news" in task_lower:
+                    explicit_function_detected = True
+
+            if (
+                "function: get_recommendations" in task_lower
+                or "analyst" in task_lower
+                or "recommendation" in task_lower
+                or "recommendations" in task_lower
+                or "upgrade" in task_lower
+                or "downgrade" in task_lower
+            ):
                 tools_to_call.add("get_recommendations")
-            
-            if "function: get_company_profile" in task_lower or "company profile" in task_lower or "company info" in task_lower:
+                if "function: get_recommendations" in task_lower:
+                    explicit_function_detected = True
+
+            if (
+                "function: get_company_profile" in task_lower
+                or "company profile" in task_lower
+                or "company info" in task_lower
+            ):
                 tools_to_call.add("get_company_profile")
-            
-            if "function: get_financial_metrics" in task_lower or "financial metrics" in task_lower or "financials" in task_lower:
+                if "function: get_company_profile" in task_lower:
+                    explicit_function_detected = True
+
+            if (
+                "function: get_financial_metrics" in task_lower
+                or "financial metrics" in task_lower
+                or "financials" in task_lower
+            ):
                 tools_to_call.add("get_financial_metrics")
-            
-            # If no specific tools detected, make a smart guess based on keywords
+                if "function: get_financial_metrics" in task_lower:
+                    explicit_function_detected = True
+
             if not tools_to_call:
                 logger.info("No specific tools detected in task, using default tools based on keywords")
+                default_inference_used = True
                 if any(word in task_lower for word in ["news", "article", "recent", "latest"]):
                     tools_to_call.add("get_yahoo_finance_news")
                 if any(word in task_lower for word in ["analyst", "recommendation", "rating", "upgrade", "downgrade"]):
                     tools_to_call.add("get_recommendations")
                 if any(word in task_lower for word in ["price", "stock", "quote", "market"]):
                     tools_to_call.add("get_stock_info")
-            
+
             logger.info(f"Tools to call based on task analysis: {tools_to_call}")
-            
-            # Call MCP server for Yahoo Finance tools
-            if any(tool in tools_to_call for tool in ["get_stock_info", "get_historical_stock_prices", "get_yahoo_finance_news", "get_recommendations"]):
-                async with sse_client(self.mcp_server_url) as (read, write):
-                    async with ClientSession(read, write) as session:
-                        await session.initialize()
-                        
-                        # Call get_stock_info if needed
-                        if "get_stock_info" in tools_to_call:
-                            logger.info(f"Calling MCP tool: get_stock_info for {ticker}")
-                            result = await session.call_tool("get_stock_info", arguments={"ticker": ticker})
-                            stock_info_data = json.loads(result.content[0].text)
-                            data["stock_info"] = {
-                                "current_price": stock_info_data.get("currentPrice", "N/A"),
-                                "market_cap": stock_info_data.get("marketCap", "N/A"),
-                                "52_week_high": stock_info_data.get("fiftyTwoWeekHigh", "N/A"),
-                                "52_week_low": stock_info_data.get("fiftyTwoWeekLow", "N/A"),
-                                "pe_ratio": stock_info_data.get("trailingPE", "N/A"),
-                                "forward_pe": stock_info_data.get("forwardPE", "N/A"),
-                                "dividend_yield": stock_info_data.get("dividendYield", "N/A"),
-                            }
-                        
-                        # Call get_historical_stock_prices if needed
-                        if "get_historical_stock_prices" in tools_to_call:
-                            logger.info(f"Calling MCP tool: get_historical_stock_prices for {ticker}")
-                            result = await session.call_tool(
-                                "get_historical_stock_prices",
-                                arguments={"ticker": ticker, "period": "1y", "interval": "1d"}
-                            )
-                            hist_data = json.loads(result.content[0].text)
-                            
-                            # Calculate performance
-                            if hist_data and len(hist_data) > 0:
-                                first_close = hist_data[0].get("Close", 0)
-                                last_close = hist_data[-1].get("Close", 0)
-                                if first_close > 0:
-                                    year_performance = ((last_close - first_close) / first_close) * 100
-                                    high_prices = [d.get("High", 0) for d in hist_data]
-                                    low_prices = [d.get("Low", 0) for d in hist_data]
-                                    
-                                    data["stock_performance"] = {
-                                        "1_year_return": f"{year_performance:.2f}%",
-                                        "52_week_high": max(high_prices) if high_prices else "N/A",
-                                        "52_week_low": min(low_prices) if low_prices else "N/A",
-                                    }
-                        
-                        # Call get_yahoo_finance_news if needed
-                        if "get_yahoo_finance_news" in tools_to_call:
-                            logger.info(f"Calling MCP tool: get_yahoo_finance_news for {ticker}")
-                            result = await session.call_tool("get_yahoo_finance_news", arguments={"ticker": ticker})
-                            data["company_news"] = result.content[0].text
-                        
-                        # Call get_recommendations if needed
-                        if "get_recommendations" in tools_to_call:
-                            logger.info(f"Calling MCP tool: get_recommendations for {ticker}")
-                            result = await session.call_tool(
-                                "get_recommendations",
-                                arguments={"ticker": ticker, "recommendation_type": "recommendations"}
-                            )
-                            data["analyst_recommendations"] = result.content[0].text
-            
-            # Call FMP tools if needed
-            if self.fmp_utils:
-                if "get_company_profile" in tools_to_call:
-                    logger.info(f"Calling FMP: get_company_profile for {ticker}")
-                    data["company_profile"] = self.fmp_utils.get_company_profile(ticker)
-                
-                if "get_financial_metrics" in tools_to_call:
-                    logger.info(f"Calling FMP: get_financial_metrics for {ticker}")
-                    metrics_df = self.fmp_utils.get_financial_metrics(ticker, years=4)
-                    if not metrics_df.empty:
-                        data["financial_metrics"] = metrics_df.to_markdown()
-            
-            logger.info(f"Data fetched successfully for {ticker}", tools_called=list(tools_to_call), data_keys=list(data.keys()))
+
+            with self._tracer.start_as_current_span("company_agent.fetch_data", kind=SpanKind.INTERNAL) as fetch_span:
+                fetch_span.set_attribute("maf.agent", self.name)
+                fetch_span.set_attribute("maf.task.length", len(task) if task else 0)
+                fetch_span.set_attribute(
+                    "maf.tools.requested",
+                    ",".join(sorted(tools_to_call)) if tools_to_call else "none",
+                )
+                fetch_span.set_attribute("maf.tools.explicit", explicit_function_detected)
+                fetch_span.set_attribute("maf.tools.inferred", default_inference_used)
+                if ticker:
+                    fetch_span.set_attribute("maf.ticker", ticker)
+
+                executed_tools: set[str] = set()
+
+                try:
+                    mcp_tools = {
+                        "get_stock_info",
+                        "get_historical_stock_prices",
+                        "get_yahoo_finance_news",
+                        "get_recommendations",
+                    }
+                    if tools_to_call.intersection(mcp_tools):
+                        async with sse_client(self.mcp_server_url) as (read, write):
+                            async with ClientSession(read, write) as session:
+                                await session.initialize()
+
+                                if "get_stock_info" in tools_to_call:
+                                    with self._tool_span("mcp", "get_stock_info", ticker=ticker) as span:
+                                        span.set_attribute("maf.tool.argument_keys", "ticker")
+                                        span.set_attribute("maf.tool.ticker_missing", ticker is None)
+                                        logger.info(f"Calling MCP tool: get_stock_info for {ticker}")
+                                        result = await session.call_tool("get_stock_info", arguments={"ticker": ticker})
+                                        raw_content = result.content[0].text if result.content else ""
+                                        span.set_attribute("maf.tool.response_length", len(raw_content))
+                                        stock_info_data = json.loads(raw_content) if raw_content else {}
+                                        span.set_attribute("maf.tool.response_keys", len(stock_info_data))
+                                        data["stock_info"] = {
+                                            "current_price": stock_info_data.get("currentPrice", "N/A"),
+                                            "market_cap": stock_info_data.get("marketCap", "N/A"),
+                                            "52_week_high": stock_info_data.get("fiftyTwoWeekHigh", "N/A"),
+                                            "52_week_low": stock_info_data.get("fiftyTwoWeekLow", "N/A"),
+                                            "pe_ratio": stock_info_data.get("trailingPE", "N/A"),
+                                            "forward_pe": stock_info_data.get("forwardPE", "N/A"),
+                                            "dividend_yield": stock_info_data.get("dividendYield", "N/A"),
+                                        }
+                                    executed_tools.add("get_stock_info")
+
+                                if "get_historical_stock_prices" in tools_to_call:
+                                    with self._tool_span("mcp", "get_historical_stock_prices", ticker=ticker) as span:
+                                        span.set_attribute("maf.tool.argument_keys", "ticker,period,interval")
+                                        logger.info(f"Calling MCP tool: get_historical_stock_prices for {ticker}")
+                                        result = await session.call_tool(
+                                            "get_historical_stock_prices",
+                                            arguments={"ticker": ticker, "period": "1y", "interval": "1d"},
+                                        )
+                                        raw_content = result.content[0].text if result.content else "[]"
+                                        hist_data = json.loads(raw_content)
+                                        span.set_attribute("maf.tool.rows", len(hist_data))
+                                        if hist_data:
+                                            first_close = hist_data[0].get("Close", 0)
+                                            last_close = hist_data[-1].get("Close", 0)
+                                            span.set_attribute("maf.tool.first_close", first_close)
+                                            span.set_attribute("maf.tool.last_close", last_close)
+                                            if first_close > 0:
+                                                year_performance = ((last_close - first_close) / first_close) * 100
+                                                high_prices = [d.get("High", 0) for d in hist_data]
+                                                low_prices = [d.get("Low", 0) for d in hist_data]
+
+                                                data["stock_performance"] = {
+                                                    "1_year_return": f"{year_performance:.2f}%",
+                                                    "52_week_high": max(high_prices) if high_prices else "N/A",
+                                                    "52_week_low": min(low_prices) if low_prices else "N/A",
+                                                }
+                                    executed_tools.add("get_historical_stock_prices")
+
+                                if "get_yahoo_finance_news" in tools_to_call:
+                                    with self._tool_span("mcp", "get_yahoo_finance_news", ticker=ticker) as span:
+                                        span.set_attribute("maf.tool.argument_keys", "ticker")
+                                        logger.info(f"Calling MCP tool: get_yahoo_finance_news for {ticker}")
+                                        result = await session.call_tool("get_yahoo_finance_news", arguments={"ticker": ticker})
+                                        news_text = result.content[0].text if result.content else ""
+                                        span.set_attribute("maf.tool.response_length", len(news_text))
+                                        data["company_news"] = news_text
+                                    executed_tools.add("get_yahoo_finance_news")
+
+                                if "get_recommendations" in tools_to_call:
+                                    with self._tool_span("mcp", "get_recommendations", ticker=ticker) as span:
+                                        span.set_attribute("maf.tool.argument_keys", "ticker,recommendation_type")
+                                        logger.info(f"Calling MCP tool: get_recommendations for {ticker}")
+                                        result = await session.call_tool(
+                                            "get_recommendations",
+                                            arguments={"ticker": ticker, "recommendation_type": "recommendations"},
+                                        )
+                                        recommendation_text = result.content[0].text if result.content else ""
+                                        span.set_attribute("maf.tool.response_length", len(recommendation_text))
+                                        data["analyst_recommendations"] = recommendation_text
+                                    executed_tools.add("get_recommendations")
+
+                    if self.fmp_utils:
+                        if "get_company_profile" in tools_to_call:
+                            with self._tool_span("fmp", "get_company_profile", ticker=ticker) as span:
+                                logger.info(f"Calling FMP: get_company_profile for {ticker}")
+                                profile = self.fmp_utils.get_company_profile(ticker)
+                                span.set_attribute("maf.tool.response_has_data", bool(profile))
+                                data["company_profile"] = profile
+                            executed_tools.add("get_company_profile")
+
+                        if "get_financial_metrics" in tools_to_call:
+                            with self._tool_span("fmp", "get_financial_metrics", ticker=ticker) as span:
+                                logger.info(f"Calling FMP: get_financial_metrics for {ticker}")
+                                metrics_df = self.fmp_utils.get_financial_metrics(ticker, years=4)
+                                if metrics_df is not None and not metrics_df.empty:
+                                    rows, cols = getattr(metrics_df, "shape", (0, 0))
+                                    span.set_attribute("maf.tool.rows", rows)
+                                    span.set_attribute("maf.tool.columns", cols)
+                                    data["financial_metrics"] = metrics_df.to_markdown()
+                                else:
+                                    span.set_attribute("maf.tool.rows", 0)
+                                    span.set_attribute("maf.tool.columns", 0)
+                            executed_tools.add("get_financial_metrics")
+
+                    logger.info(
+                        f"Data fetched successfully for {ticker}",
+                        tools_called=list(tools_to_call),
+                        data_keys=list(data.keys()),
+                    )
+                except Exception as inner_exc:
+                    fetch_span.record_exception(inner_exc)
+                    fetch_span.set_attribute("maf.fetch.success", False)
+                    raise
+                else:
+                    fetch_span.set_attribute("maf.fetch.success", True)
+                finally:
+                    fetch_span.set_attribute(
+                        "maf.tools.executed",
+                        ",".join(sorted(executed_tools)) if executed_tools else "none",
+                    )
+                    fetch_span.set_attribute("maf.tools.executed_count", len(executed_tools))
+
             return data
-            
+
         except Exception as e:
             logger.error(f"Error fetching data for {ticker}", error=str(e), exc_info=True)
             return data
@@ -478,16 +589,16 @@ Include specific numbers and dates where available."""
         return prompt
     
     async def _execute_llm(self, prompt: str) -> str:
-        """Execute LLM call using agent_framework's AzureOpenAIChatClient."""
+        """Execute LLM call using agent_framework's AzureAIAgentClient."""
         if not self.chat_client:
             logger.warning("No chat client configured, returning simulated response")
             return f"[Simulated Company Analysis]\n{prompt}"
         
         import time
         start_time = time.time()
-        
-        logger.info("Calling Azure OpenAI via agent_framework", model=self.model, prompt_length=len(prompt))
-        
+
+        logger.info("Calling Azure AI via agent_framework", model=self.model, prompt_length=len(prompt))
+
         # Use Microsoft Agent Framework's chat client
         from agent_framework import ChatMessage, Role
         
@@ -499,12 +610,14 @@ Include specific numbers and dates where available."""
         response = await self.chat_client.get_response(
             messages=messages,
             temperature=0.7,
-            max_tokens=2000
+            max_tokens=2000,
+            store=True,
+            metadata={"maf_agent": self.name},
         )
         
         duration = time.time() - start_time
         logger.info(
-            "Azure OpenAI response received",
+            "Azure AI response received",
             model=self.model,
             duration_seconds=round(duration, 2),
             response_length=len(response.text) if response.text else 0
@@ -553,6 +666,31 @@ Include specific numbers and dates where available."""
             contents=[TextContent(text=text)]
         )
         return AgentRunResponse(messages=[message])
+
+    @contextmanager
+    def _tool_span(
+        self,
+        provider: str,
+        tool_name: str,
+        *,
+        ticker: Optional[str] = None,
+    ):
+        """Create a child span for an external tool invocation."""
+        span_name = f"invoke_tool.{provider}.{tool_name}"
+        with self._tracer.start_as_current_span(span_name, kind=SpanKind.CLIENT) as span:
+            span.set_attribute("maf.agent", self.name)
+            span.set_attribute("maf.tool.provider", provider)
+            span.set_attribute("maf.tool.name", tool_name)
+            if ticker:
+                span.set_attribute("maf.ticker", ticker)
+            try:
+                yield span
+            except Exception as exc:
+                span.record_exception(exc)
+                span.set_attribute("maf.tool.success", False)
+                raise
+            else:
+                span.set_attribute("maf.tool.success", True)
     
     async def run_stream(
         self,
@@ -573,7 +711,7 @@ Include specific numbers and dates where available."""
             AgentRunResponseUpdate objects containing chunks of the response
         """
         # For now, implement non-streaming version by yielding complete response
-        # Future: Implement true streaming with Azure OpenAI streaming API
+    # Future: Implement true streaming with Azure AI streaming API
         response = await self.run(messages, thread=thread, **kwargs)
         
         # Yield the complete response as a single update

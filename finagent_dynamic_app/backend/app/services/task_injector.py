@@ -8,12 +8,14 @@ Handles intelligent task injection into existing plans with:
 - Dependency resolution
 """
 
+import re
 import uuid
 import structlog
 from typing import Dict, Any, List, Optional, Tuple
 from datetime import datetime
 
-from agent_framework.azure import AzureOpenAIChatClient
+from agent_framework.azure import AzureAIAgentClient
+from azure.identity.aio import DefaultAzureCredential
 from agent_framework import ChatMessage, Role
 
 from app.models.task_models import Step, StepStatus, AgentType
@@ -38,17 +40,24 @@ class TaskInjector:
     
     def __init__(self):
         logger.info("TaskInjector: Initializing LLM client")
-        logger.info("TaskInjector: Settings - endpoint exists", has_endpoint=bool(settings.azure_openai_endpoint))
-        logger.info("TaskInjector: Settings - api_key exists", has_key=bool(settings.azure_openai_api_key))
-        logger.info("TaskInjector: Settings - deployment", deployment=settings.azure_openai_deployment)
-        
-        self.llm_client = AzureOpenAIChatClient(
-            endpoint=settings.azure_openai_endpoint,
-            api_key=settings.azure_openai_api_key,
-            deployment_name=settings.azure_openai_deployment,
-            api_version=settings.azure_openai_api_version
+        logger.info(
+            "TaskInjector: Settings - Azure AI project configured",
+            has_project_endpoint=bool(settings.azure_ai_project_endpoint),
+            model=settings.azure_ai_model_deployment_name,
         )
-        logger.info("TaskInjector: LLM client created", client_type=type(self.llm_client).__name__)
+
+        if not settings.azure_ai_project_endpoint or not settings.azure_ai_model_deployment_name:
+            raise ValueError("TaskInjector requires Azure AI configuration. Set AZURE_AI_PROJECT_ENDPOINT and AZURE_AI_MODEL_DEPLOYMENT_NAME")
+
+        self._credential = DefaultAzureCredential(exclude_interactive_browser_credential=True)
+        self.llm_client = AzureAIAgentClient(
+            project_endpoint=settings.azure_ai_project_endpoint,
+            model_deployment_name=settings.azure_ai_model_deployment_name,
+            async_credential=self._credential,
+        )
+        self._agent_name = "financial_task_injector"
+        self._prepared = False
+        logger.info("TaskInjector: Azure AI agent client created", client_type=type(self.llm_client).__name__)
         
         # Define available agents and their capabilities
         self.agent_capabilities = {
@@ -119,6 +128,7 @@ class TaskInjector:
         logger.info("TaskInjector: Messages prepared, calling LLM")
         
         try:
+            await self._ensure_agent_ready()
             logger.info("TaskInjector: Calling LLM client get_response")
             response = await self.llm_client.get_response(
                 messages=messages,
@@ -143,6 +153,55 @@ class TaskInjector:
                 "message": f"Error analyzing request: {str(e)}",
                 "success": False
             }
+
+    async def close(self) -> None:
+        """Release Azure credentials used by the injector."""
+        try:
+            if self.llm_client:
+                await self.llm_client.close()
+        finally:
+            if self._credential:
+                await self._credential.close()
+
+    async def _ensure_agent_ready(self) -> None:
+        """Ensure the Azure AI agent exists and client targets it."""
+        if self._prepared:
+            return
+
+        project_client = self.llm_client.project_client
+
+        existing_agent = None
+        async for agent in project_client.agents.list_agents():
+            if getattr(agent, "name", None) == self._agent_name:
+                existing_agent = agent
+                break
+
+        if existing_agent is None:
+            logger.info("TaskInjector: Creating Azure AI agent", agent_name=self._agent_name)
+            description = "Analyzes plan injection requests for the financial research application"
+            instructions = (
+                "You analyze user task injection requests and output structured analysis including "
+                "the action to take, reasoning, agents involved, and dependencies."
+            )
+            created = await project_client.agents.create_agent(
+                name=self._agent_name,
+                model=settings.azure_ai_model_deployment_name,
+                description=description,
+                instructions=instructions,
+            )
+            target_agent = created
+        else:
+            logger.info("TaskInjector: Reusing existing Azure AI agent", agent_name=self._agent_name)
+            target_agent = existing_agent
+
+        self.llm_client.agent_id = str(target_agent.id)
+        self.llm_client.agent_name = target_agent.name
+        if getattr(self.llm_client, "model_deployment_name", None) is not None:
+            self.llm_client.model_deployment_name = settings.azure_ai_model_deployment_name
+        if hasattr(self.llm_client, "_should_delete_agent"):
+            self.llm_client._should_delete_agent = False
+
+        self._prepared = True
     
     def _build_analysis_prompt(
         self,
@@ -210,7 +269,7 @@ EXAMPLES:
     def _parse_analysis(self, analysis_text: str, current_steps: List[Dict[str, Any]]) -> Dict[str, Any]:
         """Parse the LLM analysis response."""
         lines = analysis_text.strip().split('\n')
-        result = {}
+        result: Dict[str, Any] = {}
         
         for line in lines:
             if ':' in line:
@@ -219,7 +278,9 @@ EXAMPLES:
                 value = value.strip()
                 
                 if key == 'ACTION':
-                    result['action'] = value.lower().replace('add_', '')
+                    placement = value.lower()
+                    result['placement'] = placement
+                    result['action'] = placement.replace('add_', '')
                 elif key == 'REASONING':
                     result['reasoning'] = value
                 elif key == 'NEW_TASK':
@@ -249,6 +310,7 @@ EXAMPLES:
         if action in ['beginning', 'middle', 'end']:
             result['success'] = True
             result['action'] = 'added'
+            result['placement'] = result.get('placement')
         elif action == 'duplicate':
             result['success'] = False
             result['message'] = result.get('message', 'This task is already in your plan.')
@@ -270,53 +332,160 @@ EXAMPLES:
         plan_id: str,
         session_id: str,
         user_id: str
-    ) -> Tuple[Step, int]:
+    ) -> Tuple[List[Step], int]:
+        """Create one or more new steps based on analysis output.
+
+        Returns a tuple containing the list of new steps (ordered as inserted)
+        and the position at which the first step should be inserted.
         """
-        Create a new step based on analysis.
-        
-        Returns:
-            Tuple of (new_step, insert_position)
-        """
-        # Determine insertion position
-        if analysis.get('insert_after'):
-            insert_position = analysis['insert_after'] + 1
-        elif 'beginning' in str(analysis.get('action', '')):
-            insert_position = 1
-        else:
-            insert_position = len(current_steps) + 1
+        insert_position = self._determine_insert_position(analysis, current_steps)
         
         # Map dependencies from step numbers to step IDs
-        dependency_ids = []
+        dependency_ids = self._map_dependencies(analysis, current_steps)
+
+        agents = self._normalize_agents(analysis.get('agent')) or ['Generic_Agent']
+        tasks = self._normalize_tasks(analysis.get('new_task'), len(agents))
+        functions = self._normalize_functions(analysis.get('function'), len(agents))
+
+        new_steps: List[Step] = []
+        previous_step_id: Optional[str] = None
+
+        for index, agent_name in enumerate(agents):
+            resolved_agent = self._resolve_agent(agent_name)
+            step_dependencies = list(dependency_ids)
+            if index > 0 and previous_step_id:
+                step_dependencies.append(previous_step_id)
+
+            step = Step(
+                id=str(uuid.uuid4()),
+                plan_id=plan_id,
+                session_id=session_id,
+                user_id=user_id,
+                order=insert_position + index,
+                action=tasks[index] if index < len(tasks) else tasks[-1],
+                agent=resolved_agent,
+                status=StepStatus.PLANNED,
+                dependencies=step_dependencies,
+                tools=[functions[index]] if functions[index] else [],
+                manually_injected=True,
+                timestamp=datetime.utcnow(),
+                data_type="step",
+            )
+
+            logger.info(
+                "Created new step via injection",
+                step_id=step.id,
+                order=step.order,
+                agent=step.agent.value,
+                dependencies=len(step_dependencies),
+                manually_injected=True,
+            )
+
+            new_steps.append(step)
+            previous_step_id = step.id
+
+        return new_steps, insert_position
+
+    def _determine_insert_position(self, analysis: Dict[str, Any], current_steps: List[Step]) -> int:
+        if analysis.get('insert_after') is not None:
+            return analysis['insert_after'] + 1
+
+        placement = (analysis.get('placement') or '').lower()
+        if 'beginning' in placement:
+            return 1
+
+        if 'middle' in placement:
+            midpoint = max(1, len(current_steps) // 2)
+            return midpoint + 1
+
+        if 'end' in placement:
+            return len(current_steps) + 1
+
+        if analysis.get('action') == 'added' and not current_steps:
+            return 1
+
+        return len(current_steps) + 1
+
+    def _map_dependencies(self, analysis: Dict[str, Any], current_steps: List[Step]) -> List[str]:
+        dependency_ids: List[str] = []
         if analysis.get('dependencies'):
             for dep_order in analysis['dependencies']:
                 dep_step = next((s for s in current_steps if s.order == dep_order), None)
                 if dep_step:
                     dependency_ids.append(dep_step.id)
-        
-        # Create the new step
-        new_step = Step(
-            id=str(uuid.uuid4()),
-            plan_id=plan_id,
-            session_id=session_id,
-            user_id=user_id,
-            order=insert_position,
-            action=analysis.get('new_task', ''),
-            agent=AgentType(analysis.get('agent', 'Generic_Agent')),
-            status=StepStatus.PLANNED,
-            dependencies=dependency_ids,
-            tools=[analysis.get('function', '')],
-            manually_injected=True,  # Mark as manually injected
-            timestamp=datetime.utcnow(),
-            data_type="step"
-        )
-        
-        logger.info(
-            "Created new step via injection",
-            step_id=new_step.id,
-            order=new_step.order,
-            agent=new_step.agent.value,
-            dependencies=len(dependency_ids),
-            manually_injected=True
-        )
-        
-        return new_step, insert_position
+        return dependency_ids
+
+    def _normalize_agents(self, agent_field: Any) -> List[str]:
+        if not agent_field:
+            return []
+
+        if isinstance(agent_field, list):
+            raw_agents = agent_field
+        else:
+            cleaned = re.sub(r"\band\b", ",", str(agent_field), flags=re.IGNORECASE)
+            raw_agents = re.split(r",|;|\n", cleaned)
+
+        agents = [agent.strip() for agent in raw_agents if agent and agent.strip()]
+        return agents
+
+    def _normalize_tasks(self, task_field: Any, count: int) -> List[str]:
+        if not task_field:
+            return [""] * max(count, 1)
+
+        if isinstance(task_field, list):
+            tasks = [str(item).strip() for item in task_field if str(item).strip()]
+        else:
+            parts = re.split(r";|\n|\||\d+\.", str(task_field))
+            tasks = [part.strip(" -") for part in parts if part.strip(" -")]
+
+        if not tasks:
+            tasks = [str(task_field).strip()]
+
+        if len(tasks) == 1 and count > 1:
+            and_splits = [segment.strip(" -") for segment in re.split(r"\band\b", tasks[0], flags=re.IGNORECASE) if segment.strip(" -")]
+            if len(and_splits) >= count:
+                tasks = and_splits
+
+        while len(tasks) < count:
+            tasks.append(tasks[-1])
+
+        if len(tasks) > count:
+            tasks = tasks[:count]
+
+        return tasks
+
+    def _normalize_functions(self, function_field: Any, count: int) -> List[str]:
+        if not function_field:
+            return [""] * count
+
+        if isinstance(function_field, list):
+            functions = [str(item).strip() for item in function_field if str(item).strip()]
+        else:
+            functions = [token.strip() for token in re.split(r",|;|\n", str(function_field)) if token.strip()]
+
+        if not functions:
+            functions = [""] * count
+
+        while len(functions) < count:
+            functions.append(functions[-1])
+
+        if len(functions) > count:
+            functions = functions[:count]
+
+        return functions
+
+    def _resolve_agent(self, agent_name: str) -> AgentType:
+        normalized = (agent_name or '').strip()
+        if not normalized:
+            return AgentType.GENERIC
+
+        normalized = normalized.replace(" ", "_")
+        if not normalized.endswith("_Agent"):
+            normalized = f"{normalized}_Agent"
+
+        for agent in AgentType:
+            if agent.value.lower() == normalized.lower():
+                return agent
+
+        logger.warning("TaskInjector: Unknown agent, defaulting to Generic", agent_name=agent_name)
+        return AgentType.GENERIC

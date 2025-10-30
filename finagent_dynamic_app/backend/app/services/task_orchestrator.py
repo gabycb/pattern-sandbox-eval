@@ -14,6 +14,9 @@ from ..maf import (
     PlanParsingError,
     PlanStep,
 )
+from agent_framework import ChatAgent, ChatMessage, Role
+from agent_framework.observability import get_tracer
+from opentelemetry.trace import SpanKind
 
 from ..agents import (
     CompanyAgent,
@@ -59,11 +62,9 @@ class TaskOrchestrator:
         self.settings = settings
 
         self.agent_factory = MAFAgentFactory(self.settings)
-        self.planning_agent = self.agent_factory.create_chat_agent(
-            agent_type="planner",
-            name="financial_planner",
-        )
+        self.planning_agent: Optional[ChatAgent] = None
         self.orchestrator = MAFOrchestrator()
+        self._tracer = get_tracer()
 
         self.cosmos = cosmos_store
         self.registered_agents: Dict[str, object] = {}
@@ -89,6 +90,16 @@ class TaskOrchestrator:
             )
 
         await self.cosmos.initialize()
+        await self.agent_factory.prepare()
+
+        if self.planning_agent is None:
+            self.planning_agent = self.agent_factory.create_chat_agent(
+                agent_type="planner",
+                name="financial_planner",
+            )
+        else:
+            logger.debug("Planning agent already initialised")
+
         self._register_agents()
 
         logger.info("TaskOrchestrator initialization complete")
@@ -99,6 +110,8 @@ class TaskOrchestrator:
         if self.cosmos:
             await self.cosmos.close()
 
+        await self.agent_factory.close()
+
         logger.info("TaskOrchestrator shutdown complete")
 
     def _register_agents(self) -> None:
@@ -107,53 +120,54 @@ class TaskOrchestrator:
             logger.debug("Agents already registered", agents=list(self.registered_agents))
             return
 
-        chat_client = self.agent_factory.chat_client
+        if not self.planning_agent:
+            raise RuntimeError("Planning agent not initialised")
 
         agents: Dict[str, object] = {
             AgentType.COMPANY.value: CompanyAgent(
                 name=AgentType.COMPANY.value,
-                chat_client=chat_client,
-                model=self.settings.AZURE_OPENAI_DEPLOYMENT,
+                chat_client=self.agent_factory.get_agent_client("company"),
+                model=self.agent_factory.get_agent_model("company"),
                 fmp_api_key=self.settings.FMP_API_KEY,
                 mcp_server_url=self.settings.YAHOO_FINANCE_MCP_URL,
             ),
             AgentType.SEC.value: SECAgent(
                 name=AgentType.SEC.value,
-                chat_client=chat_client,
-                model=self.settings.AZURE_OPENAI_DEPLOYMENT,
+                chat_client=self.agent_factory.get_agent_client("sec"),
+                model=self.agent_factory.get_agent_model("sec"),
                 fmp_api_key=self.settings.FMP_API_KEY,
             ),
             AgentType.EARNINGS.value: EarningsAgent(
                 name=AgentType.EARNINGS.value,
-                chat_client=chat_client,
-                model=self.settings.AZURE_OPENAI_DEPLOYMENT,
+                chat_client=self.agent_factory.get_agent_client("earnings"),
+                model=self.agent_factory.get_agent_model("earnings"),
                 fmp_api_key=self.settings.FMP_API_KEY,
             ),
             AgentType.FUNDAMENTALS.value: FundamentalsAgent(
                 name=AgentType.FUNDAMENTALS.value,
-                chat_client=chat_client,
-                model=self.settings.AZURE_OPENAI_DEPLOYMENT,
+                chat_client=self.agent_factory.get_agent_client("fundamentals"),
+                model=self.agent_factory.get_agent_model("fundamentals"),
                 fmp_api_key=self.settings.FMP_API_KEY,
             ),
             AgentType.TECHNICALS.value: TechnicalsAgent(
                 name=AgentType.TECHNICALS.value,
-                chat_client=chat_client,
-                model=self.settings.AZURE_OPENAI_DEPLOYMENT,
+                chat_client=self.agent_factory.get_agent_client("technicals"),
+                model=self.agent_factory.get_agent_model("technicals"),
             ),
             AgentType.FORECASTER.value: ForecasterAgent(
                 name=AgentType.FORECASTER.value,
-                chat_client=chat_client,
-                model=self.settings.AZURE_OPENAI_DEPLOYMENT,
+                chat_client=self.agent_factory.get_agent_client("forecaster"),
+                model=self.agent_factory.get_agent_model("forecaster"),
             ),
             AgentType.SUMMARIZER.value: SummarizerAgent(
                 name=AgentType.SUMMARIZER.value,
-                chat_client=chat_client,
-                model=self.settings.AZURE_OPENAI_DEPLOYMENT,
+                chat_client=self.agent_factory.get_agent_client("summarizer"),
+                model=self.agent_factory.get_agent_model("summarizer"),
             ),
             AgentType.REPORT.value: ReportAgent(
                 name=AgentType.REPORT.value,
-                chat_client=chat_client,
-                model=self.settings.AZURE_OPENAI_DEPLOYMENT,
+                chat_client=self.agent_factory.get_agent_client("report"),
+                model=self.agent_factory.get_agent_model("report"),
             ),
         }
 
@@ -188,6 +202,9 @@ class TaskOrchestrator:
             description=input_task.description[:100],
             session_id=input_task.session_id
         )
+
+        if not self.planning_agent:
+            raise RuntimeError("Planning agent not initialised; call initialize() before creating plans.")
 
         try:
             session_id = f"session-{uuid.uuid4().hex[:8]}"
@@ -711,7 +728,7 @@ Formatting Requirements:
         
         for dep_id in step.dependencies:
             try:
-                dep_step = await self.cosmos.get_step(dep_id)
+                dep_step = await self.cosmos.get_step(dep_id, step.session_id)
                 logger.info(
                     f"Processing dependency step {dep_id}",
                     dep_action=dep_step.action[:50],
@@ -733,18 +750,23 @@ Formatting Requirements:
                 # Extract artifacts from messages
                 for msg in messages:
                     if msg.metadata and "artifact" in msg.metadata:
-                        all_artifacts.append(msg.metadata["artifact"])
-                        logger.info(f"Found artifact in message metadata")
+                        artifact_payload = dict(msg.metadata["artifact"])
+                        self._enrich_artifact(artifact_payload, dep_step)
+                        all_artifacts.append(artifact_payload)
+                        logger.info("Found artifact in message metadata", keys=list(artifact_payload.keys()))
                 
                 # Also include the step's result as an artifact
                 if dep_step.agent_reply:
                     artifact = {
                         "type": "step_result",
                         "step_id": dep_id,
+                        "step_order": dep_step.order,
+                        "step_number": dep_step.order,
                         "agent": dep_step.agent.value,
                         "action": dep_step.action,
                         "content": dep_step.agent_reply,
-                        "tools": dep_step.tools
+                        "output": dep_step.agent_reply,
+                        "tools": dep_step.tools or [],
                     }
                     all_artifacts.append(artifact)
                     logger.info(
@@ -764,6 +786,32 @@ Formatting Requirements:
         )
         
         return {"dependency_artifacts": all_artifacts}
+
+    def _enrich_artifact(self, artifact: Dict[str, Any], source_step: Step) -> None:
+        """Backfill common metadata on an artifact gathered from Cosmos."""
+        artifact.setdefault("type", "step_result")
+        artifact.setdefault("step_id", source_step.id)
+
+        step_order = getattr(source_step, "order", None)
+        if step_order is not None:
+            artifact.setdefault("step_order", step_order)
+            artifact.setdefault("step_number", step_order)
+
+        agent_name = source_step.agent.value if hasattr(source_step.agent, "value") else str(source_step.agent)
+        artifact.setdefault("agent", agent_name)
+        artifact.setdefault("action", source_step.action)
+
+        if "output" not in artifact and "content" in artifact:
+            artifact["output"] = artifact["content"]
+        if "content" not in artifact and "output" in artifact:
+            artifact["content"] = artifact["output"]
+
+        tools = source_step.tools or []
+        existing_tools = artifact.get("tools")
+        if not existing_tools:
+            artifact["tools"] = tools
+        elif isinstance(existing_tools, list):
+            artifact["tools"] = list({*existing_tools, *tools})
 
     def _is_synthesis_agent(self, step: Step) -> bool:
         """
@@ -830,9 +878,11 @@ Formatting Requirements:
                     "type": "step_result",
                     "step_id": prev_step.id,
                     "step_order": prev_step.order,
+                    "step_number": prev_step.order,
                     "agent": prev_step.agent.value,
                     "action": prev_step.action,
                     "content": prev_step.agent_reply,
+                    "output": prev_step.agent_reply,
                     "tools": prev_step.tools or []
                 }
                 session_artifacts.append(artifact)
@@ -985,48 +1035,74 @@ Formatting Requirements:
                 content_preview=progress_message.content[:50]
             )
             
-            if not requires_collaboration and agent_instance and hasattr(agent_instance, "process"):
-                logger.info(
-                    "Executing via direct agent.process call",
-                    agent_name=agent_name,
-                    ticker=context.get("ticker"),
-                    task_preview=task[:100],
-                )
-                result_text = await agent_instance.process(task, context)
-                result = SimpleNamespace(
-                    result=result_text or "",
-                    metadata={
-                        "mode": "direct_process",
-                        "agent": agent_name,
-                        "tools": tools,
-                    },
-                )
-            else:
-                if requires_collaboration:
-                    workflow_agents = self._select_collaborating_agents(step)
+            span_attributes = {
+                "maf.plan_id": step.plan_id,
+                "maf.session_id": step.session_id,
+                "maf.step_id": step.id,
+                "maf.step_order": getattr(step, "order", None),
+                "maf.agent": agent_name,
+                "maf.requires_collaboration": requires_collaboration,
+            }
+            ticker = context.get("ticker")
+            if ticker:
+                span_attributes["maf.ticker"] = ticker
+            if tools:
+                span_attributes["maf.requested_tools"] = ",".join(tools)
+
+            with self._tracer.start_as_current_span(
+                f"invoke_agent.{agent_name}",
+                kind=SpanKind.CLIENT,
+            ) as span:
+                for key, value in span_attributes.items():
+                    if value is not None:
+                        span.set_attribute(key, value)
+
+                if not requires_collaboration and agent_instance and hasattr(agent_instance, "process"):
                     logger.info(
-                        "Executing collaborative workflow",
-                        agents=workflow_agents,
-                        step_id=step.id,
+                        "Executing via direct agent.process call",
+                        agent_name=agent_name,
+                        ticker=ticker,
+                        task_preview=task[:100],
                     )
-                    result = await self._execute_via_workflow(
-                        workflow_agents,
-                        task,
-                        context,
-                        concurrent=True,
+                    result_text = await agent_instance.process(task, context)
+                    span.set_attribute("maf.execution_mode", "direct_process")
+                    result = SimpleNamespace(
+                        result=result_text or "",
+                        metadata={
+                            "mode": "direct_process",
+                            "agent": agent_name,
+                            "tools": tools,
+                        },
                     )
                 else:
-                    logger.info(
-                        "Executing via sequential workflow fallback",
-                        agent_name=agent_name,
-                        step_id=step.id,
-                    )
-                    result = await self._execute_via_workflow(
-                        [agent_name],
-                        task,
-                        context,
-                        concurrent=False,
-                    )
+                    if requires_collaboration:
+                        workflow_agents = self._select_collaborating_agents(step)
+                        logger.info(
+                            "Executing collaborative workflow",
+                            agents=workflow_agents,
+                            step_id=step.id,
+                        )
+                        span.set_attribute("maf.execution_mode", "collaborative_workflow")
+                        span.set_attribute("maf.collaborators", ",".join(workflow_agents))
+                        result = await self._execute_via_workflow(
+                            workflow_agents,
+                            task,
+                            context,
+                            concurrent=True,
+                        )
+                    else:
+                        logger.info(
+                            "Executing via sequential workflow fallback",
+                            agent_name=agent_name,
+                            step_id=step.id,
+                        )
+                        span.set_attribute("maf.execution_mode", "sequential_workflow")
+                        result = await self._execute_via_workflow(
+                            [agent_name],
+                            task,
+                            context,
+                            concurrent=False,
+                        )
 
             if tools and hasattr(result, "metadata") and isinstance(result.metadata, dict):
                 result.metadata.setdefault("tools", tools)
@@ -1473,9 +1549,6 @@ Formatting Requirements:
             Extracted ticker symbol or None
         """
         try:
-            from agent_framework.azure import AzureOpenAIChatClient
-            from agent_framework import ChatMessage, Role
-            
             extraction_prompt = f"""Extract the stock ticker symbol from the following text. 
 The text may contain:
 - A ticker symbol (e.g., "TSLA", "AAPL", "MSFT")
@@ -1488,14 +1561,7 @@ If no company or ticker is mentioned, respond with "NONE".
 Text: {text}
 
 Ticker symbol (uppercase only):"""
-
-            # Use Microsoft Agent Framework's AzureOpenAIChatClient
-            chat_client = AzureOpenAIChatClient(
-                endpoint=self.settings.AZURE_OPENAI_ENDPOINT,
-                api_key=self.settings.AZURE_OPENAI_API_KEY,
-                deployment_name=self.settings.AZURE_OPENAI_DEPLOYMENT,
-                api_version=self.settings.AZURE_OPENAI_API_VERSION
-            )
+            chat_client = self.agent_factory.chat_client
             
             # Create messages for the chat
             messages = [
@@ -1504,7 +1570,7 @@ Ticker symbol (uppercase only):"""
             ]
             
             # Call the chat client using get_response
-            response = await chat_client.get_response(messages=messages, temperature=0, max_tokens=10)
+            response = await chat_client.get_response(messages=messages, temperature=0, max_tokens=64)
             
             # Extract ticker from response (ChatResponse has .text property directly)
             ticker = response.text.strip().upper()

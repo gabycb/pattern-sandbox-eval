@@ -1,0 +1,1 @@
+ "C:\Program Files\OpenTelemetry Collector\otelcol.exe" --config "D:\repos\agent_foundation\otel-collector-config.yaml"

@@ -20,11 +20,15 @@ class Settings(BaseSettings):
         extra="ignore"
     )
     
-    # Azure OpenAI
-    azure_openai_endpoint: str = Field(..., alias="AZURE_OPENAI_ENDPOINT")
-    azure_openai_api_key: str = Field(..., alias="AZURE_OPENAI_API_KEY")
-    azure_openai_deployment: str = Field(default="gpt-4o", alias="AZURE_OPENAI_DEPLOYMENT")
-    azure_openai_api_version: str = Field(default="2024-08-01-preview", alias="AZURE_OPENAI_API_VERSION")
+    # Azure AI (preferred)
+    azure_ai_project_endpoint: Optional[str] = Field(default=None, alias="AZURE_AI_PROJECT_ENDPOINT")
+    azure_ai_model_deployment_name: Optional[str] = Field(default=None, alias="AZURE_AI_MODEL_DEPLOYMENT_NAME")
+
+    # Azure OpenAI (legacy fallback)
+    azure_openai_endpoint: Optional[str] = Field(default=None, alias="AZURE_OPENAI_ENDPOINT")
+    azure_openai_api_key: Optional[str] = Field(default=None, alias="AZURE_OPENAI_API_KEY")
+    azure_openai_deployment: Optional[str] = Field(default=None, alias="AZURE_OPENAI_DEPLOYMENT")
+    azure_openai_api_version: Optional[str] = Field(default="2024-08-01-preview", alias="AZURE_OPENAI_API_VERSION")
     
     # Financial Data APIs
     fmp_api_key: Optional[str] = Field(default=None, alias="FMP_API_KEY")
@@ -47,9 +51,19 @@ class Settings(BaseSettings):
         return self.yahoo_finance_mcp_url
     
     @property
-    def AZURE_OPENAI_API_KEY(self) -> str:
+    def AZURE_OPENAI_API_KEY(self) -> Optional[str]:
         """Uppercase alias for azure_openai_api_key."""
         return self.azure_openai_api_key
+
+    @property
+    def AZURE_AI_PROJECT_ENDPOINT(self) -> Optional[str]:
+        """Uppercase alias for azure_ai_project_endpoint."""
+        return self.azure_ai_project_endpoint
+
+    @property
+    def AZURE_AI_MODEL_DEPLOYMENT_NAME(self) -> Optional[str]:
+        """Uppercase alias for azure_ai_model_deployment_name."""
+        return self.azure_ai_model_deployment_name
     
     # Azure Storage
     azure_storage_connection_string: Optional[str] = Field(
@@ -89,19 +103,24 @@ class Settings(BaseSettings):
         return self.cosmosdb_container
     
     @property
-    def AZURE_OPENAI_ENDPOINT(self) -> str:
+    def AZURE_OPENAI_ENDPOINT(self) -> Optional[str]:
         """Uppercase alias for azure_openai_endpoint."""
         return self.azure_openai_endpoint
     
     @property
-    def AZURE_OPENAI_API_VERSION(self) -> str:
+    def AZURE_OPENAI_API_VERSION(self) -> Optional[str]:
         """Uppercase alias for azure_openai_api_version."""
         return self.azure_openai_api_version
     
     @property
-    def AZURE_OPENAI_DEPLOYMENT(self) -> str:
+    def AZURE_OPENAI_DEPLOYMENT(self) -> Optional[str]:
         """Uppercase alias for azure_openai_deployment."""
         return self.azure_openai_deployment
+
+    @property
+    def DEFAULT_MODEL_DEPLOYMENT(self) -> Optional[str]:
+        """Preferred model deployment alias for agents."""
+        return self.azure_ai_model_deployment_name or self.azure_openai_deployment
     
     @property
     def LOG_LEVEL(self) -> str:
@@ -151,6 +170,10 @@ class Settings(BaseSettings):
     # Observability Configuration
     observability_enabled: bool = Field(default=False, alias="OBSERVABILITY_ENABLED")
     observability_otlp_endpoint: Optional[str] = Field(default=None, alias="OBSERVABILITY_OTLP_ENDPOINT")
+    observability_enable_sensitive_data: bool = Field(
+        default=False,
+        alias="OBSERVABILITY_ENABLE_SENSITIVE_DATA",
+    )
     
     @property
     def cors_origins_list(self) -> List[str]:

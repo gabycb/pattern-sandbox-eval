@@ -320,7 +320,7 @@ Be objective and balanced - include both positive and negative signals.
         return prompt
     
     async def _execute_llm(self, prompt: str) -> str:
-        """Execute LLM call using agent_framework's AzureOpenAIChatClient."""
+        """Execute LLM call using agent_framework's AzureAIAgentClient."""
         if not self.chat_client:
             return f"[Simulated Earnings Analysis]\n{prompt}"
         
@@ -334,7 +334,9 @@ Be objective and balanced - include both positive and negative signals.
         response = await self.chat_client.get_response(
             messages=messages,
             temperature=0.7,
-            max_tokens=3000
+            max_tokens=3000,
+            store=True,
+            metadata={"maf_agent": self.name},
         )
         
         return response.text

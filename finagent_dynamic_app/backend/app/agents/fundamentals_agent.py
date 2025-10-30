@@ -388,7 +388,7 @@ Be specific with numbers from the data above. Identify trends, anomalies, and pr
         return prompt
     
     async def _execute_llm(self, prompt: str) -> str:
-        """Execute LLM call using agent_framework's AzureOpenAIChatClient."""
+        """Execute LLM call using agent_framework's AzureAIAgentClient."""
         if not self.chat_client:
             return f"[Simulated Fundamental Analysis]\n{prompt}"
         
@@ -402,7 +402,9 @@ Be specific with numbers from the data above. Identify trends, anomalies, and pr
         response = await self.chat_client.get_response(
             messages=messages,
             temperature=0.7,
-            max_tokens=3000
+            max_tokens=3000,
+            store=True,
+            metadata={"maf_agent": self.name},
         )
         
         return response.text

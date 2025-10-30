@@ -133,7 +133,13 @@ Be concise, focused, and directly address the summarization task."""
                 ])
             
             logger.info("Calling chat client for summary generation")
-            response = await self.chat_client.get_response(messages=chat_messages, temperature=0.3, max_tokens=2000)
+            response = await self.chat_client.get_response(
+                messages=chat_messages,
+                temperature=0.3,
+                max_tokens=2000,
+                store=True,
+                metadata={"maf_agent": self.name},
+            )
             
             summary_text = response.text if hasattr(response, 'text') else str(response)
             
@@ -219,11 +225,11 @@ Be concise, focused, and directly address the summarization task."""
             prompt_parts.append("")
             
             for step_data in session_context:
-                step_num = step_data.get("step_number", "?")
+                step_num = step_data.get("step_number") or step_data.get("step_order", "?")
                 agent = step_data.get("agent", "unknown")
                 action = step_data.get("action", "unknown action")
                 tools = step_data.get("tools", [])
-                output = step_data.get("output", "")
+                output = step_data.get("output") or step_data.get("content", "")
                 
                 prompt_parts.append(f"Step {step_num} ({agent} - {action}):")
                 if tools:

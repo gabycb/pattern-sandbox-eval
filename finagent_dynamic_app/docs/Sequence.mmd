@@ -1,0 +1,28 @@
+sequenceDiagram
+    participant Analyst
+    participant UI as React UI
+    participant API as FastAPI API
+    participant Orchestrator as TaskOrchestrator
+    participant Agent as Specialist Agent
+    participant Cosmos as Cosmos DB
+
+    Analyst->>UI: Submit research objective & ticker
+    UI->>API: POST /api/input_task
+    API->>Orchestrator: create_plan_from_objective
+    Orchestrator->>Orchestrator: Run MAF planner (ReAct)
+    Orchestrator->>Cosmos: Store session, plan, steps
+    Orchestrator-->>API: Plan with pending approvals
+    API-->>UI: Render plan & steps
+    loop Analyst approvals
+        Analyst->>UI: Approve/Reject step
+        UI->>API: POST /api/approve_step
+        API->>Orchestrator: update_step_status
+        Orchestrator->>Cosmos: Update step state
+    end
+    Orchestrator->>Agent: Execute approved step
+    Agent->>Agent: Gather data (MCP, FMP, SEC) & reason via Azure OpenAI
+    Agent-->>Orchestrator: Step result / artifact
+    Orchestrator->>Cosmos: Persist messages & artifacts
+    Orchestrator-->>API: Stream status update
+    API-->>UI: Update live plan view
+    UI-->>Analyst: Final brief & downloadable artifacts

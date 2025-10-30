@@ -179,7 +179,7 @@ Be data-driven, factual, and transparent about uncertainty."""
             prompt_length=len(prompt)
         )
         
-        # Execute with Azure OpenAI
+        # Execute with Azure AI Agents
         try:
             logger.info(f"ForecasterAgent calling LLM for {ticker}")
             response = await self._execute_llm(prompt)
@@ -446,16 +446,16 @@ Provide your forecast analysis based on the task requirements and available data
         return prompt
     
     async def _execute_llm(self, prompt: str) -> str:
-        """Execute LLM call using agent_framework's AzureOpenAIChatClient."""
+        """Execute LLM call using agent_framework's AzureAIAgentClient."""
         if not self.chat_client:
             logger.warning("No chat client configured, returning simulated response")
             return f"[Simulated Forecast Analysis]\n{prompt}"
         
         import time
         start_time = time.time()
-        
-        logger.info("Calling Azure OpenAI via agent_framework", model=self.model, prompt_length=len(prompt))
-        
+
+        logger.info("Calling Azure AI via agent_framework", model=self.model, prompt_length=len(prompt))
+
         # Use Microsoft Agent Framework's chat client
         from agent_framework import ChatMessage, Role
         
@@ -467,12 +467,14 @@ Provide your forecast analysis based on the task requirements and available data
         response = await self.chat_client.get_response(
             messages=messages,
             temperature=0.5,  # Slightly higher for creative forecasting
-            max_tokens=1500
+                max_tokens=1500,
+                store=True,
+                metadata={"maf_agent": self.name},
         )
         
         duration = time.time() - start_time
         logger.info(
-            "Azure OpenAI response received",
+            "Azure AI response received",
             model=self.model,
             duration_seconds=round(duration, 2),
             response_length=len(response.text) if response.text else 0

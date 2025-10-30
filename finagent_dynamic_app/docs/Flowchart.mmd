@@ -1,0 +1,57 @@
+flowchart LR
+    subgraph Analysts
+        User["Equity Analyst<br/>Browser UI"]
+    end
+
+    subgraph Frontend
+        UI["React/Vite Dashboard\n(TaskInput, PlanView, History)"]
+    end
+
+    subgraph Backend["FastAPI Backend"]
+        API["REST / WebSocket Routes\n(orchestration.py)"]
+        Orchestrator["TaskOrchestrator\n(MAF Planner + Orchestrator)"]
+        Telemetry["Telemetry Service\n(logging + App Insights)"]
+    end
+
+    subgraph Agents["Specialist Agents"]
+        CompanyAgent
+        SECAgent
+        EarningsAgent
+        FundamentalsAgent
+        TechnicalsAgent
+        ForecasterAgent
+        SummarizerAgent
+        ReportAgent
+    end
+
+    subgraph DataSources["Financial Data & Reasoning"]
+        YahooMCP["Yahoo Finance MCP\n(SSE server)"]
+        FMP["Financial Modeling Prep API"]
+        SEC["SEC EDGAR Filings"]
+        AzureOpenAI["Azure OpenAI\nReasoning & Summaries"]
+        Storage["Azure Storage\nArtifacts (optional)"]
+    end
+
+    subgraph Persistence["State & Observability"]
+        Cosmos["Azure Cosmos DB\nSessions, Plans, Steps"]
+        Insights["Application Insights\n(telemetry)"]
+    end
+
+    User -->|Objectives, approvals| UI
+    UI -->|REST/WebSocket| API
+    API --> Orchestrator
+    Orchestrator -->|status updates| API
+    Orchestrator -->|register & invoke| Agents
+
+    Agents -->|market data| YahooMCP
+    Agents -->|fundamentals| FMP
+    Agents -->|filings| SEC
+    Agents -->|reasoning| AzureOpenAI
+    Agents -->|reports| Storage
+
+    Orchestrator -->|persist plans, steps| Cosmos
+    Orchestrator -->|fetch history| Cosmos
+    Telemetry --> Insights
+    Orchestrator --> Telemetry
+    API --> Telemetry
+    UI -->|updates| User
