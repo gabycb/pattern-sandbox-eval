@@ -71,6 +71,7 @@ export interface AgentMessage {
   plan_id: string;
   step_id?: string;
   agent_name: string;
+  source?: string;
   content: string;
   message_type: 'info' | 'action' | 'result' | 'error' | 'progress' | 'action_response';
   timestamp: string;
@@ -124,6 +125,56 @@ export interface TaskInjectionResponse {
   inserted_at?: number;
   new_step_id?: string;
   suggestions?: string[];
+}
+
+export interface ChatObjectiveRequest {
+  objective: string;
+  ticker?: string;
+  scope?: string[];
+}
+
+export interface ChatObjectiveResponse {
+  task_id: string;
+  session_id: string;
+  plan: Plan;
+  web_pubsub_url?: string;
+  web_pubsub_group?: string;
+}
+
+export interface ChatStepPatch {
+  id: string;
+  action?: string;
+  human_feedback?: string;
+}
+
+export interface ChatConfirmRequest {
+  task_id: string;
+  session_id?: string;
+  action: 'continue' | 'modify';
+  steps?: ChatStepPatch[];
+}
+
+export interface ChatConfirmResponse {
+  task_id: string;
+  session_id: string;
+  plan: Plan;
+}
+
+export interface ChatCancelRequest {
+  task_id: string;
+  session_id?: string;
+}
+
+export interface ChatStatusResponse {
+  task_id: string;
+  session_id: string;
+  plan: Plan;
+  messages: AgentMessage[];
+  updated_at: string;
+}
+
+export interface ChatFeatureConfig {
+  enabled: boolean;
 }
 
 // ============= API Client =============
@@ -224,6 +275,47 @@ class APIClient {
     const response = await axios.post<TaskInjectionResponse>(
       `${this.baseURL}/api/inject_task`,
       request
+    );
+    return response.data;
+  }
+
+  async createChatObjective(payload: ChatObjectiveRequest): Promise<ChatObjectiveResponse> {
+    const response = await axios.post<ChatObjectiveResponse>(
+      `${this.baseURL}/api/chat/objective`,
+      payload
+    );
+    return response.data;
+  }
+
+  async confirmChatPlan(payload: ChatConfirmRequest): Promise<ChatConfirmResponse> {
+    const response = await axios.post<ChatConfirmResponse>(
+      `${this.baseURL}/api/chat/confirm`,
+      payload
+    );
+    return response.data;
+  }
+
+  async cancelChatRun(payload: ChatCancelRequest): Promise<{ message: string }> {
+    const response = await axios.post<{ message: string }>(
+      `${this.baseURL}/api/chat/cancel`,
+      payload
+    );
+    return response.data;
+  }
+
+  async getChatStatus(taskId: string, sessionId?: string): Promise<ChatStatusResponse> {
+    const url = new URL(`${this.baseURL}/api/chat/status`);
+    url.searchParams.set('taskId', taskId);
+    if (sessionId) {
+      url.searchParams.set('sessionId', sessionId);
+    }
+    const response = await axios.get<ChatStatusResponse>(url.toString());
+    return response.data;
+  }
+
+  async getChatConfig(): Promise<ChatFeatureConfig> {
+    const response = await axios.get<ChatFeatureConfig>(
+      `${this.baseURL}/api/chat/config`
     );
     return response.data;
   }

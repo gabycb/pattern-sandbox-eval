@@ -74,6 +74,14 @@ class Settings(BaseSettings):
         default="financial-reports",
         alias="AZURE_STORAGE_CONTAINER"
     )
+
+    # Chat / Web PubSub
+    enable_chat_autorun: bool = Field(default=True, alias="ENABLE_CHAT_AUTORUN")
+    web_pubsub_connection_string: Optional[str] = Field(
+        default=None,
+        alias="WEB_PUBSUB_CONNECTION_STRING"
+    )
+    web_pubsub_hub: str = Field(default="finagent-chat", alias="WEB_PUBSUB_HUB")
     
     # Azure Cosmos DB
     cosmosdb_endpoint: Optional[str] = Field(default=None, alias="COSMOSDB_ENDPOINT")
@@ -101,6 +109,21 @@ class Settings(BaseSettings):
     def COSMOSDB_CONTAINER(self) -> str:
         """Uppercase alias for cosmosdb_container."""
         return self.cosmosdb_container
+
+    @property
+    def ENABLE_CHAT_AUTORUN(self) -> bool:
+        """Uppercase alias for enable_chat_autorun."""
+        return self.enable_chat_autorun
+
+    @property
+    def WEB_PUBSUB_CONNECTION_STRING(self) -> Optional[str]:
+        """Uppercase alias for web_pubsub_connection_string."""
+        return self.web_pubsub_connection_string
+
+    @property
+    def WEB_PUBSUB_HUB(self) -> str:
+        """Uppercase alias for web_pubsub_hub."""
+        return self.web_pubsub_hub
     
     @property
     def AZURE_OPENAI_ENDPOINT(self) -> Optional[str]:

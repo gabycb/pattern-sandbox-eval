@@ -16,6 +16,7 @@
     "date-fns": "^4.1.0",
     "lucide-react": "^0.451.0",
     "marked": "^16.3.0",
+    "@azure/web-pubsub-client": "^1.0.3",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
     "tailwind-merge": "^2.5.3"

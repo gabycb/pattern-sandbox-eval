@@ -18,6 +18,7 @@ from fastapi.responses import JSONResponse, FileResponse
 from fastapi.staticfiles import StaticFiles
 
 from .routers import orchestration
+from .routers import chat
 from .services.task_orchestrator import TaskOrchestrator
 from .infra.settings import Settings
 from .infra.telemetry import get_telemetry
@@ -54,6 +55,8 @@ async def lifespan(app: FastAPI):
     logger.info("Shutting down application")
     if task_orchestrator:
         await task_orchestrator.shutdown()
+    if chat._chat_publisher:
+        await chat._chat_publisher.shutdown()
     telemetry.shutdown()
     logger.info("Application shutdown complete")
 
@@ -78,6 +81,7 @@ app.add_middleware(
 
 # Include routers
 app.include_router(orchestration.router)
+app.include_router(chat.router)
 
 
 # ============= Health & Status =============

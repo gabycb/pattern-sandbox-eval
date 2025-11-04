@@ -6,6 +6,7 @@ import { TaskInput } from './components/TaskInput';
 import { PlanView } from './components/PlanView';
 import { UserHistory } from './components/UserHistory';
 import { apiClient, Plan } from './lib/api';
+import { ChatFab } from './chat/ChatFab';
 import './App.css';
 
 const queryClient = new QueryClient({
@@ -21,6 +22,7 @@ function App() {
   return (
     <QueryClientProvider client={queryClient}>
       <AppContent />
+      <ChatFab />
     </QueryClientProvider>
   );
 }

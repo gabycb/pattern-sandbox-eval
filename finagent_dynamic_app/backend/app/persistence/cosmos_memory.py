@@ -492,6 +492,37 @@ class CosmosMemoryStore(MemoryStoreBase):
         query = " ".join(query_parts)
         
         return await self._query_items(query, parameters, AgentMessage)
+
+    async def get_messages(
+        self,
+        session_id: str,
+        plan_id: Optional[str] = None,
+        step_id: Optional[str] = None,
+    ) -> List[AgentMessage]:
+        """Retrieve messages with optional plan/step filters."""
+        query_parts = [
+            "SELECT * FROM c",
+            "WHERE c.session_id=@session_id",
+            "AND c.data_type='message'"
+        ]
+        parameters = [{"name": "@session_id", "value": session_id}]
+
+        if plan_id:
+            query_parts.append("AND c.plan_id=@plan_id")
+            parameters.append({"name": "@plan_id", "value": plan_id})
+
+        if step_id:
+            query_parts.append("AND c.step_id=@step_id")
+            parameters.append({"name": "@step_id", "value": step_id})
+
+        if self.user_id:
+            query_parts.append("AND c.user_id=@user_id")
+            parameters.append({"name": "@user_id", "value": self.user_id})
+
+        query_parts.append("ORDER BY c.timestamp ASC")
+        query = " ".join(query_parts)
+
+        return await self._query_items(query, parameters, AgentMessage)
     
     # ========================================================================
     # User History Methods

@@ -22,6 +22,7 @@ agent-framework
 azure-identity
 azure-storage-blob
 azure-cosmos
+azure-messaging-webpubsubservice
 
 # AI/ML
 openai>=1.99.0

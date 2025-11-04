@@ -110,6 +110,16 @@ class MemoryStoreBase(ABC):
     async def get_messages_by_plan(self, plan_id: str) -> List[AgentMessage]:
         """Retrieve all messages for a plan."""
         pass
+
+    @abstractmethod
+    async def get_messages(
+        self,
+        session_id: str,
+        plan_id: Optional[str] = None,
+        step_id: Optional[str] = None,
+    ) -> List[AgentMessage]:
+        """Retrieve messages with optional plan/step filters."""
+        pass
     
     # ========================================================================
     # Query Methods
