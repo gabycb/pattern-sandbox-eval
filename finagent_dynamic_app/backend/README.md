@@ -18,6 +18,7 @@ This implementation uses the **Microsoft Agent Framework (MAF)** via the local `
 ✅ **MAF Integration** - Uses `app.maf` wrappers over Microsoft Agent Framework (no duplication!)
 ✅ **CosmosDB Persistence** - Session-partitioned storage for plans and messages
 ✅ **Microsoft Agent Framework** - Leverages MAF for agent execution
+✅ **Safety Evaluation (new)** - Run Azure AI Red Team scans against any registered agent
 
 ## Project Structure
 
@@ -237,6 +238,33 @@ pytest --cov=app --cov-report=html
 # Specific test
 pytest tests/test_task_orchestrator.py
 ```
+
+## Safety Evaluation
+
+You can run Azure AI Evaluation red teaming against any registered agent (planner, summarizer, etc.).
+
+```powershell
+# Ensure dependencies are installed
+pip install -r requirements.txt
+
+# Authenticate with Azure CLI (required for evaluation SDK)
+az login
+
+# Run an evaluation scan against the planner agent and keep a local scorecard
+python -m app.evaluation.red_team_runner planner --output planner-redteam.json
+```
+
+Optional flags allow you to target specific risk categories, attack strategies, and objective counts:
+
+```powershell
+python -m app.evaluation.red_team_runner summarizer `
+  --risk-categories violence hateunfairness `
+  --strategies easy moderate rot13 `
+  --objectives 3 `
+  --scan-name "Summarizer red team"
+```
+
+By default results are logged to your Azure AI Foundry project. Add `--output` if you also want a local JSON scorecard.
 
 ## Development
 

@@ -1,0 +1,1 @@
+python -m app.evaluation.red_team_runner planner --scan-name "Planner Safety Sweep"

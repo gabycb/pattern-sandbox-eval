@@ -25,6 +25,7 @@ azure-cosmos
 
 # AI/ML
 openai>=1.99.0
+azure-ai-evaluation[redteam]
 
 # Data & Analytics
 yfinance==0.2.48
