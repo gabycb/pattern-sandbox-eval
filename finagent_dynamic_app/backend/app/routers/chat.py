@@ -46,8 +46,15 @@ def _ensure_feature_enabled(settings: Settings) -> None:
 
 def _get_chat_publisher(settings: Settings) -> ChatPubSubPublisher:
     global _chat_publisher
+    print(f"\n=== _get_chat_publisher called ===")
+    print(f"Existing publisher: {_chat_publisher is not None}")
+    logger.info(f"_get_chat_publisher called: existing_publisher={_chat_publisher is not None}")
     if _chat_publisher is None:
+        print("Creating new ChatPubSubPublisher...")
+        logger.info("Creating new ChatPubSubPublisher instance")
         _chat_publisher = ChatPubSubPublisher(settings)
+        print(f"Publisher created, enabled: {_chat_publisher.is_enabled}")
+        logger.info(f"ChatPubSubPublisher created: enabled={_chat_publisher.is_enabled}")
     return _chat_publisher
 
 
@@ -138,6 +145,16 @@ async def confirm_chat_plan(
         raise HTTPException(status_code=401, detail="User authentication required")
 
     publisher = _get_chat_publisher(settings)
+    print(f"\n=== confirm_chat_plan ===")
+    print(f"Publisher enabled: {publisher.is_enabled}")
+    print(f"Task ID: {plan_with_steps.id}")
+    print(f"Session ID: {session_id}")
+    print(f"Starting run...")
+    
+    logger.info(
+        f"confirm_chat_plan: Starting run with publisher (enabled={publisher.is_enabled}), "
+        f"task_id={plan_with_steps.id}, session_id={session_id}"
+    )
     await _chat_run_manager.start_run(
         task_id=plan_with_steps.id,
         session_id=session_id,

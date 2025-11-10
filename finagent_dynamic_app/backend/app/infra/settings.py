@@ -81,7 +81,7 @@ class Settings(BaseSettings):
         default=None,
         alias="WEB_PUBSUB_CONNECTION_STRING"
     )
-    web_pubsub_hub: str = Field(default="finagent-chat", alias="WEB_PUBSUB_HUB")
+    web_pubsub_hub: str = Field(default="finagent_chat", alias="WEB_PUBSUB_HUB")
     
     # Azure Cosmos DB
     cosmosdb_endpoint: Optional[str] = Field(default=None, alias="COSMOSDB_ENDPOINT")
@@ -146,6 +146,11 @@ class Settings(BaseSettings):
         return self.azure_ai_model_deployment_name or self.azure_openai_deployment
     
     @property
+    def ENABLE_M365_AGENT(self) -> bool:
+        """Uppercase alias for enable_m365_agent."""
+        return self.enable_m365_agent
+
+    @property
     def LOG_LEVEL(self) -> str:
         """Log level for the application."""
         return "INFO"  # Default log level
@@ -167,6 +172,13 @@ class Settings(BaseSettings):
         default="http://localhost:5173,http://localhost:3000",
         alias="CORS_ORIGINS"
     )
+    enable_m365_agent: bool = Field(default=False, alias="ENABLE_M365_AGENT")
+    m365_host_base_url: Optional[str] = Field(default=None, alias="M365_HOST_BASE_URL")
+    m365_client_id: Optional[str] = Field(default=None, alias="M365_CLIENT_ID")
+    m365_client_secret: Optional[str] = Field(default=None, alias="M365_CLIENT_SECRET")
+    m365_tenant_id: Optional[str] = Field(default=None, alias="M365_TENANT_ID")
+    m365_bot_id: Optional[str] = Field(default=None, alias="M365_BOT_ID")
+    m365_bot_password: Optional[str] = Field(default=None, alias="M365_BOT_PASSWORD")
     
     @field_validator('cors_origins')
     @classmethod

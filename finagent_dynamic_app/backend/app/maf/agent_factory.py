@@ -10,6 +10,7 @@ import structlog
 from agent_framework import ChatAgent
 from agent_framework.azure import AzureAIAgentClient
 from azure.identity.aio import DefaultAzureCredential
+from azure.ai.projects.aio import AIProjectClient
 
 from ..infra.settings import Settings
 
@@ -44,6 +45,7 @@ class MAFAgentFactory:
         self._settings = settings
         self._chat_agent_cls = chat_agent_cls
         self._credential: Optional[DefaultAzureCredential] = None
+        self._project_client: Optional[AIProjectClient] = None
         self._chat_client = chat_client or self._build_chat_client(settings)
         self._registry: Dict[str, AgentDefinition] = {}
         self._agent_clients: Dict[str, AzureAIAgentClient] = {}
@@ -63,8 +65,16 @@ class MAFAgentFactory:
 
         try:
             self._credential = DefaultAzureCredential(exclude_interactive_browser_credential=True)
+            
+            # Create AIProjectClient for direct agent management
+            self._project_client = AIProjectClient(
+                endpoint=settings.azure_ai_project_endpoint,
+                credential=self._credential,
+            )
+            
+            # Create AzureAIAgentClient with the project_client
             client = AzureAIAgentClient(
-                project_endpoint=settings.azure_ai_project_endpoint,
+                project_client=self._project_client,
                 model_deployment_name=settings.azure_ai_model_deployment_name,
                 async_credential=self._credential,
             )
@@ -350,7 +360,7 @@ class MAFAgentFactory:
                 if temperature is not None:
                     create_kwargs["temperature"] = temperature
 
-                created = await self._chat_client.project_client.agents.create_agent(**create_kwargs)
+                created = await self._project_client.agents.create_agent(**create_kwargs)
                 agent_id = str(created.id)
                 self._known_remote_agents[azure_name] = created
                 logger.info("Created Azure AI agent", agent_type=definition.type_name, agent_name=azure_name)
@@ -365,7 +375,7 @@ class MAFAgentFactory:
                 if temperature is not None:
                     update_kwargs["temperature"] = temperature
 
-                updated = await self._chat_client.project_client.agents.update_agent(**update_kwargs)
+                updated = await self._project_client.agents.update_agent(**update_kwargs)
                 agent_id = str(updated.id if hasattr(updated, "id") else agent.id)
                 self._known_remote_agents[azure_name] = updated
                 logger.info("Updated Azure AI agent", agent_type=definition.type_name, agent_name=azure_name)
@@ -373,7 +383,7 @@ class MAFAgentFactory:
             self._agent_ids[definition.type_name] = agent_id
             self._agent_models[definition.type_name] = agent_model
             self._agent_clients[definition.type_name] = AzureAIAgentClient(
-                project_client=self._chat_client.project_client,
+                project_client=self._project_client,
                 agent_id=agent_id,
                 agent_name=azure_name,
                 model_deployment_name=agent_model,
@@ -397,7 +407,7 @@ class MAFAgentFactory:
         if azure_name in self._known_remote_agents:
             return self._known_remote_agents[azure_name]
 
-        async for agent in self._chat_client.project_client.agents.list_agents():
+        async for agent in self._project_client.agents.list_agents():
             if agent.name == azure_name:
                 self._known_remote_agents[azure_name] = agent
                 return agent
@@ -416,6 +426,8 @@ class MAFAgentFactory:
                 await client.close()
             if self._chat_client:
                 await self._chat_client.close()
+            if self._project_client:
+                await self._project_client.close()
         finally:
             if self._credential:
                 await self._credential.close()

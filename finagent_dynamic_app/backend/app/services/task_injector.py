@@ -16,6 +16,7 @@ from datetime import datetime
 
 from agent_framework.azure import AzureAIAgentClient
 from azure.identity.aio import DefaultAzureCredential
+from azure.ai.projects.aio import AIProjectClient
 from agent_framework import ChatMessage, Role
 
 from app.models.task_models import Step, StepStatus, AgentType
@@ -50,8 +51,16 @@ class TaskInjector:
             raise ValueError("TaskInjector requires Azure AI configuration. Set AZURE_AI_PROJECT_ENDPOINT and AZURE_AI_MODEL_DEPLOYMENT_NAME")
 
         self._credential = DefaultAzureCredential(exclude_interactive_browser_credential=True)
+        
+        # Create AIProjectClient for direct agent management
+        self._project_client = AIProjectClient(
+            endpoint=settings.azure_ai_project_endpoint,
+            credential=self._credential,
+        )
+        
+        # Create AzureAIAgentClient with the project_client
         self.llm_client = AzureAIAgentClient(
-            project_endpoint=settings.azure_ai_project_endpoint,
+            project_client=self._project_client,
             model_deployment_name=settings.azure_ai_model_deployment_name,
             async_credential=self._credential,
         )
@@ -159,6 +168,8 @@ class TaskInjector:
         try:
             if self.llm_client:
                 await self.llm_client.close()
+            if self._project_client:
+                await self._project_client.close()
         finally:
             if self._credential:
                 await self._credential.close()
@@ -168,7 +179,7 @@ class TaskInjector:
         if self._prepared:
             return
 
-        project_client = self.llm_client.project_client
+        project_client = self._project_client
 
         existing_agent = None
         async for agent in project_client.agents.list_agents():

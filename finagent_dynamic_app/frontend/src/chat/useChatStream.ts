@@ -9,11 +9,6 @@ interface StreamOptions {
   group?: string;
 }
 
-interface StreamEvent {
-  type: string;
-  data: unknown;
-}
-
 export function useChatStream({ taskId, sessionId, hubUrl, group }: StreamOptions) {
   const [messages, setMessages] = useState<AgentMessage[]>([]);
   const [planPayload, setPlanPayload] = useState<ChatStatusResponse['plan'] | null>(null);
@@ -26,7 +21,7 @@ export function useChatStream({ taskId, sessionId, hubUrl, group }: StreamOption
     setPlanPayload(null);
     setConnectionError(null);
     setConnected(false);
-    clientRef.current?.stop().catch(() => undefined);
+    clientRef.current?.stop()?.catch(() => undefined);
     clientRef.current = null;
   }, [taskId, sessionId]);
 
@@ -44,12 +39,17 @@ export function useChatStream({ taskId, sessionId, hubUrl, group }: StreamOption
 
     const connect = async () => {
       try {
+        console.log('=== WebPubSub Connect Attempt ===');
+        console.log('Hub URL:', hubUrl);
+        console.log('Group:', group);
         setConnectionError(null);
         await client.start();
+        console.log('✓ WebPubSub client started');
         await client.joinGroup(group);
+        console.log('✓ Joined group:', group);
         setConnected(true);
       } catch (err) {
-        console.error('Web PubSub connection failed', err);
+        console.error('✗ Web PubSub connection failed', err);
         setConnectionError('Realtime connection unavailable');
         setConnected(false);
       }
@@ -63,18 +63,29 @@ export function useChatStream({ taskId, sessionId, hubUrl, group }: StreamOption
       setConnected(true);
     };
 
-    const messageHandler = (event: StreamEvent) => {
-      if (typeof event?.data !== 'string') {
+    const messageHandler = (event: any) => {
+      console.log('=== group-message received ===', event);
+      
+      // Azure Web PubSub sends data in event.message.data, not event.data
+      const messageData = event?.message?.data || event?.data;
+      console.log('Message data:', messageData);
+      console.log('Message data type:', typeof messageData);
+      
+      if (typeof messageData !== 'string') {
+        console.warn('Message data is not a string:', typeof messageData, messageData);
         return;
       }
       try {
-        const parsed = JSON.parse(event.data);
+        const parsed = JSON.parse(messageData);
+        console.log('Parsed message:', parsed);
         if (parsed?.type === 'message' && parsed?.data?.message) {
+          console.log('→ Adding message to state');
           setMessages(prev => {
             const already = prev.some(msg => msg.id === parsed.data.message.id);
             return already ? prev : [...prev, parsed.data.message];
           });
         } else if (parsed?.data?.plan) {
+          console.log('→ Updating plan payload');
           setPlanPayload(parsed.data.plan);
         }
       } catch (error) {
@@ -82,9 +93,16 @@ export function useChatStream({ taskId, sessionId, hubUrl, group }: StreamOption
       }
     };
 
+    // Add debug handler for all event types
+    const debugHandler = (event: any) => {
+      console.log('=== WebPubSub ANY event ===', event?.type || 'unknown', event);
+    };
+
     client.on('connected', connectedHandler);
     client.on('disconnected', reconnectHandler);
     client.on('group-message', messageHandler);
+    client.on('server-message', debugHandler);
+    client.on('message', debugHandler);
 
     connect();
 
@@ -92,7 +110,9 @@ export function useChatStream({ taskId, sessionId, hubUrl, group }: StreamOption
       client.off('connected', connectedHandler);
       client.off('disconnected', reconnectHandler);
       client.off('group-message', messageHandler);
-      client.stop().catch(() => undefined);
+      client.off('server-message', debugHandler);
+      client.off('message', debugHandler);
+      client.stop()?.catch(() => undefined);
       clientRef.current = null;
     };
   }, [hubUrl, group]);

@@ -10,19 +10,20 @@ aiofiles
 # Logging & Telemetry
 structlog
 
-# Microsoft Agent Framework
-# This will automatically install compatible versions of:
-# - opentelemetry packages
-# - azure-monitor-opentelemetry packages  
-# - websockets (via mcp[ws])
-# - and other dependencies
-agent-framework
+# OpenTelemetry - Core packages managed by agent-framework, but instrumentation must be explicit
+opentelemetry-instrumentation-fastapi
+opentelemetry-instrumentation-httpx
+
+# Microsoft 365 Agents SDK host
+microsoft-agents-hosting-aiohttp
 
 # Azure dependencies
 azure-identity
 azure-storage-blob
 azure-cosmos
 azure-messaging-webpubsubservice
+azure-ai-agents>=1.2.0b5
+azure-ai-projects>=1.1.0b4
 
 # AI/ML
 openai>=1.99.0
@@ -46,3 +47,12 @@ pytest-asyncio==0.24.0
 pytest-cov==6.0.0
 black==24.10.0
 ruff==0.7.3
+
+# Microsoft Agent Framework
+# This will automatically install compatible versions of:
+# - opentelemetry packages (API, SDK, instrumentation, exporters)
+# - azure-monitor-opentelemetry packages  
+# - websockets (via mcp[ws])
+# - and other dependencies
+# IMPORTANT: Install agent-framework FIRST before other packages to avoid version conflicts
+agent-framework==1.0.0b251108
