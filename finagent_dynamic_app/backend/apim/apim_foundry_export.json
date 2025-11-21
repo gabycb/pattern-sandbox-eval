@@ -1,0 +1,260 @@
+﻿{
+    "foundry_backend":  null,
+    "managed_identity":  {
+                             "type":  "SystemAssigned, UserAssigned",
+                             "principalId":  "f7458aef-f3e6-460a-85d7-b632ab8ddf4f"
+                         },
+    "foundry_operations":  [
+                               {
+                                   "method":  "*",
+                                   "templateParameters":  [
+
+                                                          ],
+                                   "displayName":  "AI Foundry Projects - All Operations",
+                                   "id":  "foundry-all",
+                                   "urlTemplate":  "/*"
+                               },
+                               {
+                                   "method":  "POST",
+                                   "templateParameters":  [
+                                                              {
+                                                                  "name":  "projectName",
+                                                                  "type":  "string",
+                                                                  "required":  true,
+                                                                  "values":  [
+
+                                                                             ]
+                                                              },
+                                                              {
+                                                                  "name":  "threadId",
+                                                                  "type":  "string",
+                                                                  "required":  true,
+                                                                  "values":  [
+
+                                                                             ]
+                                                              },
+                                                              {
+                                                                  "name":  "runId",
+                                                                  "type":  "string",
+                                                                  "required":  true,
+                                                                  "values":  [
+
+                                                                             ]
+                                                              }
+                                                          ],
+                                   "displayName":  "Cancel Run",
+                                   "id":  "cancel-run",
+                                   "urlTemplate":  "/api/projects/{projectName}/threads/{threadId}/runs/{runId}/cancel"
+                               },
+                               {
+                                   "method":  "POST",
+                                   "templateParameters":  [
+                                                              {
+                                                                  "name":  "projectName",
+                                                                  "type":  "string",
+                                                                  "required":  true,
+                                                                  "values":  [
+
+                                                                             ]
+                                                              },
+                                                              {
+                                                                  "name":  "threadId",
+                                                                  "type":  "string",
+                                                                  "required":  true,
+                                                                  "values":  [
+
+                                                                             ]
+                                                              }
+                                                          ],
+                                   "displayName":  "Create Message",
+                                   "id":  "create-message",
+                                   "urlTemplate":  "/api/projects/{projectName}/threads/{threadId}/messages"
+                               },
+                               {
+                                   "method":  "POST",
+                                   "templateParameters":  [
+                                                              {
+                                                                  "name":  "projectName",
+                                                                  "type":  "string",
+                                                                  "required":  true,
+                                                                  "values":  [
+
+                                                                             ]
+                                                              },
+                                                              {
+                                                                  "name":  "threadId",
+                                                                  "type":  "string",
+                                                                  "required":  true,
+                                                                  "values":  [
+
+                                                                             ]
+                                                              }
+                                                          ],
+                                   "displayName":  "Create Run",
+                                   "id":  "create-run",
+                                   "urlTemplate":  "/api/projects/{projectName}/threads/{threadId}/runs"
+                               },
+                               {
+                                   "method":  "POST",
+                                   "templateParameters":  [
+                                                              {
+                                                                  "name":  "projectName",
+                                                                  "type":  "string",
+                                                                  "required":  true,
+                                                                  "values":  [
+
+                                                                             ]
+                                                              }
+                                                          ],
+                                   "displayName":  "Create Thread",
+                                   "id":  "create-thread",
+                                   "urlTemplate":  "/api/projects/{projectName}/threads"
+                               },
+                               {
+                                   "method":  "GET",
+                                   "templateParameters":  [
+                                                              {
+                                                                  "name":  "projectName",
+                                                                  "type":  "string",
+                                                                  "required":  true,
+                                                                  "values":  [
+
+                                                                             ]
+                                                              }
+                                                          ],
+                                   "displayName":  "Get Assistants",
+                                   "id":  "get-assistants",
+                                   "urlTemplate":  "/api/projects/{projectName}/assistants"
+                               },
+                               {
+                                   "method":  "GET",
+                                   "templateParameters":  [
+                                                              {
+                                                                  "name":  "projectName",
+                                                                  "type":  "string",
+                                                                  "required":  true,
+                                                                  "values":  [
+
+                                                                             ]
+                                                              },
+                                                              {
+                                                                  "name":  "threadId",
+                                                                  "type":  "string",
+                                                                  "required":  true,
+                                                                  "values":  [
+
+                                                                             ]
+                                                              },
+                                                              {
+                                                                  "name":  "runId",
+                                                                  "type":  "string",
+                                                                  "required":  true,
+                                                                  "values":  [
+
+                                                                             ]
+                                                              }
+                                                          ],
+                                   "displayName":  "Get Run",
+                                   "id":  "get-run",
+                                   "urlTemplate":  "/api/projects/{projectName}/threads/{threadId}/runs/{runId}"
+                               },
+                               {
+                                   "method":  "GET",
+                                   "templateParameters":  [
+                                                              {
+                                                                  "name":  "projectName",
+                                                                  "type":  "string",
+                                                                  "required":  true,
+                                                                  "values":  [
+
+                                                                             ]
+                                                              },
+                                                              {
+                                                                  "name":  "threadId",
+                                                                  "type":  "string",
+                                                                  "required":  true,
+                                                                  "values":  [
+
+                                                                             ]
+                                                              }
+                                                          ],
+                                   "displayName":  "List Messages",
+                                   "id":  "list-messages",
+                                   "urlTemplate":  "/api/projects/{projectName}/threads/{threadId}/messages"
+                               },
+                               {
+                                   "method":  "POST",
+                                   "templateParameters":  [
+                                                              {
+                                                                  "name":  "projectName",
+                                                                  "type":  "string",
+                                                                  "required":  true,
+                                                                  "values":  [
+
+                                                                             ]
+                                                              },
+                                                              {
+                                                                  "name":  "threadId",
+                                                                  "type":  "string",
+                                                                  "required":  true,
+                                                                  "values":  [
+
+                                                                             ]
+                                                              },
+                                                              {
+                                                                  "name":  "runId",
+                                                                  "type":  "string",
+                                                                  "required":  true,
+                                                                  "values":  [
+
+                                                                             ]
+                                                              }
+                                                          ],
+                                   "displayName":  "Submit Tool Outputs",
+                                   "id":  "submit-tool-outputs",
+                                   "urlTemplate":  "/api/projects/{projectName}/threads/{threadId}/runs/{runId}/submit_tool_outputs"
+                               },
+                               {
+                                   "method":  "PATCH",
+                                   "templateParameters":  [
+                                                              {
+                                                                  "name":  "projectName",
+                                                                  "type":  "string",
+                                                                  "required":  true,
+                                                                  "values":  [
+
+                                                                             ]
+                                                              },
+                                                              {
+                                                                  "name":  "assistantId",
+                                                                  "type":  "string",
+                                                                  "required":  true,
+                                                                  "values":  [
+
+                                                                             ]
+                                                              }
+                                                          ],
+                                   "displayName":  "Update Agent",
+                                   "id":  "update-agent",
+                                   "urlTemplate":  "/api/projects/{projectName}/assistants/{assistantId}"
+                               }
+                           ],
+    "foundry_api":  {
+                        "displayName":  "Azure AI Foundry Projects",
+                        "path":  "foundry",
+                        "serviceUrl":  "https://astdnaeus.services.ai.azure.com",
+                        "protocols":  [
+                                          "https"
+                                      ],
+                        "subscriptionRequired":  true
+                    },
+    "foundry_policy":  {
+                           "id":  "/subscriptions/b14d5e08-eb70-45f2-ad78-ac5a9016fbf7/resourceGroups/astdnapublic/providers/Microsoft.ApiManagement/service/astdnapubapim/apis/foundry-projects/policies/policy",
+                           "type":  "Microsoft.ApiManagement/service/apis/policies",
+                           "name":  "policy",
+                           "properties":  {
+                                              "format":  "rawxml",
+                                              "value":  "\u003cpolicies\u003e\r\n\t\u003cinbound\u003e\r\n\t\t\u003cbase /\u003e\r\n\t\t\u003cset-backend-service base-url=\"https://astdnaeus.services.ai.azure.com\" /\u003e\r\n\t\t\u003cauthentication-managed-identity resource=\"https://ai.azure.com\" /\u003e\r\n\t\u003c/inbound\u003e\r\n\t\u003cbackend\u003e\r\n\t\t\u003cbase /\u003e\r\n\t\u003c/backend\u003e\r\n\t\u003coutbound\u003e\r\n\t\t\u003cbase /\u003e\r\n\t\u003c/outbound\u003e\r\n\t\u003con-error\u003e\r\n\t\t\u003cbase /\u003e\r\n\t\u003c/on-error\u003e\r\n\u003c/policies\u003e"
+                                          }
+                       }
+}

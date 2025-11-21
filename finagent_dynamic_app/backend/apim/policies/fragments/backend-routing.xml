@@ -1,0 +1,3 @@
+<fragment>
+  <set-backend-service backend-id="@(context.Variables.GetValueOrDefault(&quot;selected-backend&quot;, &quot;openai-backend-0&quot;))" />
+</fragment>

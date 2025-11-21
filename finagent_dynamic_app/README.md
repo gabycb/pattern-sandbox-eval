@@ -8,6 +8,7 @@ FinAgent Dynamic App is a Microsoft Agent Framework (MAF) reference solution for
 
 - ReAct-inspired planner assembles tailored research workflows and enforces human approval checkpoints before execution.
 - Multi-source data integration across Yahoo Finance (MCP server), Financial Modeling Prep (FMP), SEC EDGAR, and Azure OpenAI reasoning.
+- **Azure API Management AI Gateway** integration with authentication, load balancing, rate limiting, monitoring, and security guardrails.
 - Cosmos DB-backed persistence that preserves plans, steps, artifacts, and searchable history with resume support.
 - Modern dashboard with plan visualization, dependency graph, live execution monitor, and past session explorer.
 - Extensible agent taxonomy based on `finagentsk`, including synthesis agents that leverage dual-context patterns for comprehensive summaries.
@@ -26,7 +27,11 @@ React UI ─REST/WebSocket──> FastAPI Backend ──> Task Orchestrator (MAF
                                                │
                                                ├─ Financial Agents (Company, SEC, Earnings, Fundamentals, Technicals, Summarizer)
                                                ├─ Cosmos DB persistence (plans, steps, artifacts)
-                                               ├─ Azure OpenAI (reasoning, synthesis)
+                                               ├─ Azure APIM AI Gateway (optional) ──> Azure OpenAI / AI Foundry
+                                               │   • Authentication (Entra Agent ID)
+                                               │   • Load Balancing & Failover
+                                               │   • Rate Limiting & Token Tracking
+                                               │   • Security Guardrails & Monitoring
                                                └─ Yahoo Finance MCP Server + FMP/EDGAR APIs
 ```
 
@@ -146,6 +151,11 @@ npm run test
 - [Docs Hub](docs/README.md)
 - [Quickstart](docs/QUICKSTART.md)
 - [Synthesis Agent Pattern](docs/SYNTHESIS_AGENT_PATTERN.md)
+- **Azure APIM AI Gateway Integration**:
+  - [Quick Start Guide](docs/APIM_QUICKSTART.md) - Get started with APIM in 5 minutes
+  - [Integration Overview](docs/APIM_INTEGRATION.md) - Comprehensive capabilities and architecture
+  - [Deployment Guide](docs/APIM_DEPLOYMENT_GUIDE.md) - Step-by-step setup instructions
+  - [Policy Templates](backend/apim_policies/README.md) - APIM policy documentation
 
 ---
 

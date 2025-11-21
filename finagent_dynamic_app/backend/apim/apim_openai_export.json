@@ -1,0 +1,284 @@
+﻿{
+    "openai_policy":  {
+                          "id":  "/subscriptions/b14d5e08-eb70-45f2-ad78-ac5a9016fbf7/resourceGroups/astdnapublic/providers/Microsoft.ApiManagement/service/astdnapubapim/apis/astdnapubaoai/policies/policy",
+                          "type":  "Microsoft.ApiManagement/service/apis/policies",
+                          "name":  "policy",
+                          "properties":  {
+                                             "format":  "rawxml",
+                                             "value":  "\u003cpolicies\u003e\r\n\t\u003cinbound\u003e\r\n\t\t\u003cbase /\u003e\r\n\t\t\u003cinclude-fragment fragment-id=\"aad-auth\" /\u003e\r\n\t\t\u003cset-variable name=\"deployment-id\" value=\"@(context.Request.MatchedParameters.GetValueOrDefault(\u0026quot;deployment-id\u0026quot;, \u0026quot;\u0026quot;))\" /\u003e\r\n\t\t\u003cset-variable name=\"selected-backend\" value=\"openai-backend-0\" /\u003e\r\n\t\t\u003ctrace source=\"auth-debug\"\u003eBefore authentication\u003c/trace\u003e\r\n\t\t\u003cauthentication-managed-identity resource=\"https://cognitiveservices.azure.com\" output-token-variable-name=\"msi-access-token\" ignore-error=\"false\" /\u003e\r\n\t\t\u003ctrace source=\"auth-debug\"\u003e@(\"Token acquired: \" + (context.Variables.ContainsKey(\"msi-access-token\") ? \"YES\" : \"NO\"))\u003c/trace\u003e\r\n\t\t\u003cset-header name=\"Authorization\" exists-action=\"override\"\u003e\r\n\t\t\t\u003cvalue\u003e@(\u0026quot;Bearer \u0026quot; + (string)context.Variables[\u0026quot;msi-access-token\u0026quot;])\u003c/value\u003e\r\n\t\t\u003c/set-header\u003e\r\n\t\t\u003ctrace source=\"auth-debug\"\u003e@(\"Authorization header: \" + context.Request.Headers.GetValueOrDefault(\"Authorization\", \"MISSING\"))\u003c/trace\u003e\r\n\t\t\u003cset-backend-service backend-id=\"openai-backend-0\" /\u003e\r\n\t\t\u003cinclude-fragment fragment-id=\"validate-routes\" /\u003e\r\n\t\t\u003cazure-openai-token-limit counter-key=\"APIMOpenAI\" tokens-per-minute=\"50000000\" estimate-prompt-tokens=\"false\" tokens-consumed-variable-name=\"TotalConsumedTokens\" remaining-tokens-variable-name=\"TotalRemainingTokens\" /\u003e\r\n\t\t\u003cinclude-fragment fragment-id=\"openai-usage-streaming\" /\u003e\r\n\t\u003c/inbound\u003e\r\n\t\u003cbackend\u003e\r\n\t\t\u003cbase /\u003e\r\n\t\u003c/backend\u003e\r\n\t\u003coutbound\u003e\r\n\t\t\u003cbase /\u003e\r\n\t\t\u003cinclude-fragment fragment-id=\"openai-usage\" /\u003e\r\n\t\u003c/outbound\u003e\r\n\t\u003con-error\u003e\r\n\t\t\u003cbase /\u003e\r\n\t\t\u003cset-variable name=\"service-name\" value=\"Azure OpenAI\" /\u003e\r\n\t\t\u003cset-variable name=\"target-deployment\" value=\"@((string)context.Request.MatchedParameters[\u0026quot;deployment-id\u0026quot;])\" /\u003e\r\n\t\t\u003cinclude-fragment fragment-id=\"throttling-events\" /\u003e\r\n\t\u003c/on-error\u003e\r\n\u003c/policies\u003e"
+                                         }
+                      },
+    "openai_operations":  [
+                              {
+                                  "displayName":  "Cancel a vector store file batch.",
+                                  "method":  "POST",
+                                  "urlTemplate":  "/vector_stores/{vector_store_id}/file_batches/{batch_id}/cancel?api-version={api-version}"
+                              },
+                              {
+                                  "displayName":  "Cancels a run that is `in_progress`.",
+                                  "method":  "POST",
+                                  "urlTemplate":  "/threads/{thread_id}/runs/{run_id}/cancel?api-version={api-version}"
+                              },
+                              {
+                                  "displayName":  "Create a message.",
+                                  "method":  "POST",
+                                  "urlTemplate":  "/threads/{thread_id}/messages?api-version={api-version}"
+                              },
+                              {
+                                  "displayName":  "Create a run.",
+                                  "method":  "POST",
+                                  "urlTemplate":  "/threads/{thread_id}/runs?api-version={api-version}"
+                              },
+                              {
+                                  "displayName":  "Create a thread and run it in one request.",
+                                  "method":  "POST",
+                                  "urlTemplate":  "/threads/runs?api-version={api-version}"
+                              },
+                              {
+                                  "displayName":  "Create a thread.",
+                                  "method":  "POST",
+                                  "urlTemplate":  "/threads?api-version={api-version}"
+                              },
+                              {
+                                  "displayName":  "Create a vector store file batch.",
+                                  "method":  "POST",
+                                  "urlTemplate":  "/vector_stores/{vector_store_id}/file_batches?api-version={api-version}"
+                              },
+                              {
+                                  "displayName":  "Create a vector store file by attaching a File to a vector store.",
+                                  "method":  "POST",
+                                  "urlTemplate":  "/vector_stores/{vector_store_id}/files?api-version={api-version}"
+                              },
+                              {
+                                  "displayName":  "Create a vector store.",
+                                  "method":  "POST",
+                                  "urlTemplate":  "/vector_stores?api-version={api-version}"
+                              },
+                              {
+                                  "displayName":  "Create an assistant with a model and instructions.",
+                                  "method":  "POST",
+                                  "urlTemplate":  "/assistants?api-version={api-version}"
+                              },
+                              {
+                                  "displayName":  "Creates a completion for the chat message",
+                                  "method":  "POST",
+                                  "urlTemplate":  "/deployments/{deployment-id}/chat/completions?api-version={api-version}"
+                              },
+                              {
+                                  "displayName":  "Creates a completion for the provided prompt, parameters and chosen model.",
+                                  "method":  "POST",
+                                  "urlTemplate":  "/deployments/{deployment-id}/completions?api-version={api-version}"
+                              },
+                              {
+                                  "displayName":  "Creates a model response.",
+                                  "method":  "POST",
+                                  "urlTemplate":  "/responses?api-version={api-version}"
+                              },
+                              {
+                                  "displayName":  "Delete a thread.",
+                                  "method":  "DELETE",
+                                  "urlTemplate":  "/threads/{thread_id}?api-version={api-version}"
+                              },
+                              {
+                                  "displayName":  "Delete a vector store file.",
+                                  "method":  "DELETE",
+                                  "urlTemplate":  "/vector_stores/{vector_store_id}/files/{file_id}?api-version={api-version}"
+                              },
+                              {
+                                  "displayName":  "Delete a vector store.",
+                                  "method":  "DELETE",
+                                  "urlTemplate":  "/vector_stores/{vector_store_id}?api-version={api-version}"
+                              },
+                              {
+                                  "displayName":  "Delete an assistant.",
+                                  "method":  "DELETE",
+                                  "urlTemplate":  "/assistants/{assistant_id}?api-version={api-version}"
+                              },
+                              {
+                                  "displayName":  "Deletes a model response with the given ID.",
+                                  "method":  "DELETE",
+                                  "urlTemplate":  "/responses/{response_id}"
+                              },
+                              {
+                                  "displayName":  "Generates a batch of images from a text caption on a given DALLE model deployment",
+                                  "method":  "POST",
+                                  "urlTemplate":  "/deployments/{deployment-id}/images/generations?api-version={api-version}"
+                              },
+                              {
+                                  "displayName":  "Generates audio from the input text.",
+                                  "method":  "POST",
+                                  "urlTemplate":  "/deployments/{deployment-id}/audio/speech?api-version={api-version}"
+                              },
+                              {
+                                  "displayName":  "Get a vector representation of a given input that can be easily consumed by machine learning models and algorithms.",
+                                  "method":  "POST",
+                                  "urlTemplate":  "/deployments/{deployment-id}/embeddings?api-version={api-version}"
+                              },
+                              {
+                                  "displayName":  "Modifies a message.",
+                                  "method":  "POST",
+                                  "urlTemplate":  "/threads/{thread_id}/messages/{message_id}?api-version={api-version}"
+                              },
+                              {
+                                  "displayName":  "Modifies a run.",
+                                  "method":  "POST",
+                                  "urlTemplate":  "/threads/{thread_id}/runs/{run_id}?api-version={api-version}"
+                              },
+                              {
+                                  "displayName":  "Modifies a thread.",
+                                  "method":  "POST",
+                                  "urlTemplate":  "/threads/{thread_id}?api-version={api-version}"
+                              },
+                              {
+                                  "displayName":  "Modifies a vector store.",
+                                  "method":  "POST",
+                                  "urlTemplate":  "/vector_stores/{vector_store_id}?api-version={api-version}"
+                              },
+                              {
+                                  "displayName":  "Modifies an assistant.",
+                                  "method":  "POST",
+                                  "urlTemplate":  "/assistants/{assistant_id}?api-version={api-version}"
+                              },
+                              {
+                                  "displayName":  "Retrieve a message.",
+                                  "method":  "GET",
+                                  "urlTemplate":  "/threads/{thread_id}/messages/{message_id}?api-version={api-version}"
+                              },
+                              {
+                                  "displayName":  "Retrieve the parsed contents of a vector store file.",
+                                  "method":  "GET",
+                                  "urlTemplate":  "/vector_stores/{vector_store_id}/files/{file_id}/content"
+                              },
+                              {
+                                  "displayName":  "Retrieves a model response with the given ID.",
+                                  "method":  "GET",
+                                  "urlTemplate":  "/responses/{response_id}"
+                              },
+                              {
+                                  "displayName":  "Retrieves a run step.",
+                                  "method":  "GET",
+                                  "urlTemplate":  "/threads/{thread_id}/runs/{run_id}/steps/{step_id}?api-version={api-version}"
+                              },
+                              {
+                                  "displayName":  "Retrieves a run.",
+                                  "method":  "GET",
+                                  "urlTemplate":  "/threads/{thread_id}/runs/{run_id}?api-version={api-version}"
+                              },
+                              {
+                                  "displayName":  "Retrieves a thread.",
+                                  "method":  "GET",
+                                  "urlTemplate":  "/threads/{thread_id}?api-version={api-version}"
+                              },
+                              {
+                                  "displayName":  "Retrieves a vector store file batch.",
+                                  "method":  "GET",
+                                  "urlTemplate":  "/vector_stores/{vector_store_id}/file_batches/{batch_id}?api-version={api-version}"
+                              },
+                              {
+                                  "displayName":  "Retrieves a vector store file.",
+                                  "method":  "GET",
+                                  "urlTemplate":  "/vector_stores/{vector_store_id}/files/{file_id}?api-version={api-version}"
+                              },
+                              {
+                                  "displayName":  "Retrieves a vector store.",
+                                  "method":  "GET",
+                                  "urlTemplate":  "/vector_stores/{vector_store_id}?api-version={api-version}"
+                              },
+                              {
+                                  "displayName":  "Retrieves an assistant.",
+                                  "method":  "GET",
+                                  "urlTemplate":  "/assistants/{assistant_id}?api-version={api-version}"
+                              },
+                              {
+                                  "displayName":  "Returns a list of assistants.",
+                                  "method":  "GET",
+                                  "urlTemplate":  "/assistants?api-version={api-version}"
+                              },
+                              {
+                                  "displayName":  "Returns a list of input items for a given response.",
+                                  "method":  "GET",
+                                  "urlTemplate":  "/responses/{response_id}/input_items"
+                              },
+                              {
+                                  "displayName":  "Returns a list of messages for a given thread.",
+                                  "method":  "GET",
+                                  "urlTemplate":  "/threads/{thread_id}/messages?api-version={api-version}"
+                              },
+                              {
+                                  "displayName":  "Returns a list of run steps belonging to a run.",
+                                  "method":  "GET",
+                                  "urlTemplate":  "/threads/{thread_id}/runs/{run_id}/steps?api-version={api-version}"
+                              },
+                              {
+                                  "displayName":  "Returns a list of runs belonging to a thread.",
+                                  "method":  "GET",
+                                  "urlTemplate":  "/threads/{thread_id}/runs?api-version={api-version}"
+                              },
+                              {
+                                  "displayName":  "Returns a list of vector store files in a batch.",
+                                  "method":  "GET",
+                                  "urlTemplate":  "/vector_stores/{vector_store_id}/file_batches/{batch_id}/files?api-version={api-version}"
+                              },
+                              {
+                                  "displayName":  "Returns a list of vector store files.",
+                                  "method":  "GET",
+                                  "urlTemplate":  "/vector_stores/{vector_store_id}/files?api-version={api-version}"
+                              },
+                              {
+                                  "displayName":  "Returns a list of vector stores.",
+                                  "method":  "GET",
+                                  "urlTemplate":  "/vector_stores?api-version={api-version}"
+                              },
+                              {
+                                  "displayName":  "Search a vector store for relevant chunks based on a query and file attributes filter.",
+                                  "method":  "POST",
+                                  "urlTemplate":  "/vector_stores/{vector_store_id}/search"
+                              },
+                              {
+                                  "displayName":  "Transcribes and translates input audio into English text.",
+                                  "method":  "POST",
+                                  "urlTemplate":  "/deployments/{deployment-id}/audio/translations?api-version={api-version}"
+                              },
+                              {
+                                  "displayName":  "Transcribes audio into the input language.",
+                                  "method":  "POST",
+                                  "urlTemplate":  "/deployments/{deployment-id}/audio/transcriptions?api-version={api-version}"
+                              },
+                              {
+                                  "displayName":  "Update attributes on a vector store file.",
+                                  "method":  "POST",
+                                  "urlTemplate":  "/vector_stores/{vector_store_id}/files/{file_id}"
+                              },
+                              {
+                                  "displayName":  "When a run has the `status: \"requires_action\"` and `required_action.",
+                                  "method":  "POST",
+                                  "urlTemplate":  "/threads/{thread_id}/runs/{run_id}/submit_tool_outputs?api-version={api-version}"
+                              }
+                          ],
+    "product_policy":  {
+                           "id":  "/subscriptions/b14d5e08-eb70-45f2-ad78-ac5a9016fbf7/resourceGroups/astdnapublic/providers/Microsoft.ApiManagement/service/astdnapubapim/products/finagent-ai-gateway/policies/policy",
+                           "type":  "Microsoft.ApiManagement/service/products/policies",
+                           "name":  "policy",
+                           "properties":  {
+                                              "format":  "rawxml",
+                                              "value":  "\u003cpolicies\u003e\r\n\t\u003cinbound\u003e\r\n\t\t\u003cbase /\u003e\r\n\t\t\u003crate-limit-by-key calls=\"600\" renewal-period=\"60\" counter-key=\"@(context.Subscription?.Id ?? context.Request.IpAddress)\" /\u003e\r\n\t\u003c/inbound\u003e\r\n\t\u003cbackend\u003e\r\n\t\t\u003cbase /\u003e\r\n\t\u003c/backend\u003e\r\n\t\u003coutbound\u003e\r\n\t\t\u003cbase /\u003e\r\n\t\u003c/outbound\u003e\r\n\t\u003con-error\u003e\r\n\t\t\u003cbase /\u003e\r\n\t\u003c/on-error\u003e\r\n\u003c/policies\u003e"
+                                          }
+                       },
+    "openai_backend":  null,
+    "product":  {
+                    "displayName":  "FinAgent AI Gateway",
+                    "description":  "Shared product for FinAgent traffic",
+                    "subscriptionRequired":  true,
+                    "approvalRequired":  false,
+                    "state":  "published"
+                },
+    "openai_api":  {
+                       "displayName":  "Azure OpenAI Gateway",
+                       "path":  "astdnapubaoai",
+                       "serviceUrl":  null,
+                       "protocols":  [
+                                         "https"
+                                     ],
+                       "subscriptionRequired":  false
+                   }
+}

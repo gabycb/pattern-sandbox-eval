@@ -1,0 +1,7 @@
+<fragment>
+  <choose>
+    <when condition="@(context.Response.StatusCode == 429)">
+      <set-variable name="ThrottleEvent" value="true" />
+    </when>
+  </choose>
+</fragment>

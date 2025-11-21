@@ -4,7 +4,9 @@ Financial Research Backend API - Dynamic Planning
 FastAPI application for multi-agent financial research with dynamic planning and approval workflow.
 """
 
-import asyncio
+import sys
+import logging
+
 from contextlib import asynccontextmanager
 from datetime import datetime
 from pathlib import Path
@@ -22,6 +24,29 @@ from .routers import chat
 from .services.task_orchestrator import TaskOrchestrator
 from .infra.settings import Settings
 from .infra.telemetry import get_telemetry
+
+# Configure Python's logging to output everything
+logging.basicConfig(
+    format="%(message)s",
+    stream=sys.stdout,
+    level=logging.DEBUG,
+    # Azure Monitor auto-instrumentation installs handlers before we import this module,
+    # so force=True ensures our developer-friendly console logger always takes effect.
+    force=True,
+)
+
+# Configure structlog to output to console
+structlog.configure(
+    processors=[
+        structlog.stdlib.add_log_level,
+        structlog.processors.TimeStamper(fmt="iso"),
+        structlog.dev.ConsoleRenderer(colors=True)
+    ],
+    wrapper_class=structlog.stdlib.BoundLogger,
+    context_class=dict,
+    logger_factory=structlog.stdlib.LoggerFactory(),
+    cache_logger_on_first_use=False,
+)
 
 logger = structlog.get_logger(__name__)
 

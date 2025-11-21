@@ -1,0 +1,10 @@
+<fragment>
+  <choose>
+    <when condition="@(context.Subscription == null)">
+      <return-response>
+        <set-status code="401" reason="Unauthorized" />
+        <set-body>@(&quot;Missing subscription key&quot;)</set-body>
+      </return-response>
+    </when>
+  </choose>
+</fragment>

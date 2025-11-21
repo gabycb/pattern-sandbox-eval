@@ -1064,7 +1064,7 @@ Formatting Requirements:
                         ticker=ticker,
                         task_preview=task[:100],
                     )
-                    result_text = await agent_instance.process(task, context)
+                    result_text = await agent_instance.process(task, context, session_id=feedback.session_id)
                     span.set_attribute("maf.execution_mode", "direct_process")
                     result = SimpleNamespace(
                         result=result_text or "",
@@ -1549,42 +1549,56 @@ Formatting Requirements:
             Extracted ticker symbol or None
         """
         try:
-            extraction_prompt = f"""Extract the stock ticker symbol from the following text. 
-The text may contain:
-- A ticker symbol (e.g., "TSLA", "AAPL", "MSFT")
-- A company name (e.g., "Tesla", "Apple Inc.", "Microsoft Corporation")
-- Both ticker and company name
+            extraction_prompt = f"""Identify and extract the stock ticker symbol from the following user request.
 
-If you find a ticker or company name, respond with ONLY the ticker symbol in uppercase.
-If no company or ticker is mentioned, respond with "NONE".
+User Request: "{text}"
 
-Text: {text}
+Return only the ticker symbol in uppercase, or "NONE" if no company/ticker is mentioned.
 
-Ticker symbol (uppercase only):"""
-            chat_client = self.agent_factory.chat_client
+Ticker:"""
+
+            # Use the V2 ticker extraction agent from factory
+            ticker_agent_client = self.agent_factory.get_agent_client("ticker_extraction")
             
-            # Create messages for the chat
+            logger.info(
+                "[AGENT_CREATION_DEBUG] Using V2 ticker extraction agent",
+                has_agent_name=hasattr(ticker_agent_client, 'agent_name') and ticker_agent_client.agent_name is not None,
+                agent_name=getattr(ticker_agent_client, 'agent_name', None)
+            )
+            
+            # Create messages for the chat (system prompt is in V2 agent definition)
             messages = [
-                ChatMessage(role=Role.SYSTEM, text="You are a financial assistant that extracts stock ticker symbols."),
                 ChatMessage(role=Role.USER, text=extraction_prompt)
             ]
             
-            # Call the chat client using get_response
-            response = await chat_client.get_response(messages=messages, temperature=0, max_tokens=64)
+            # Call the agent client using get_response with low temperature for consistency
+            # Note: Azure AI requires minimum 16 tokens for max_completion_tokens
+            response = await ticker_agent_client.get_response(messages=messages, max_tokens=20)
             
-            # Extract ticker from response (ChatResponse has .text property directly)
-            ticker = response.text.strip().upper()
+            # Extract ticker from response and clean it thoroughly
+            raw_response = response.text.strip()
+            # Remove any common prefixes/suffixes the LLM might add
+            ticker = raw_response.upper().replace("TICKER:", "").replace("SYMBOL:", "").strip()
             
-            # Validate response
-            if ticker and ticker != "NONE" and 1 <= len(ticker) <= 5 and ticker.isalpha():
+            # Additional cleanup: remove quotes, periods, or other punctuation
+            ticker = ''.join(char for char in ticker if char.isalpha())
+            
+            # Validate response - typical US tickers are 1-5 characters
+            if ticker and ticker != "NONE" and 1 <= len(ticker) <= 5:
                 logger.info(
                     "LLM extracted ticker from text",
                     ticker=ticker,
-                    original_text=text[:100]
+                    original_text=text[:100],
+                    raw_llm_response=raw_response
                 )
                 return ticker
             
-            logger.info("No valid ticker extracted by LLM", text=text[:100], llm_response=ticker)
+            logger.info(
+                "No valid ticker extracted by LLM", 
+                text=text[:100], 
+                llm_response=raw_response,
+                cleaned_ticker=ticker
+            )
             return None
             
         except Exception as e:
@@ -1617,7 +1631,6 @@ Ticker symbol (uppercase only):"""
         elif any(keyword in description_lower for keyword in ["sentiment", "summarize", "summary"]):
             return "summarizer"
         elif any(keyword in description_lower for keyword in ["report", "research brief", "comprehensive analysis"]):
-            return "report"
             return "report"
         
         return "generic"  # Fallback

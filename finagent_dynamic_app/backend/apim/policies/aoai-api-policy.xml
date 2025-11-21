@@ -1,0 +1,32 @@
+<policies>
+    <inbound>
+        <base />
+        <include-fragment fragment-id="aad-auth" />
+        <set-variable name="deployment-id" value="@(context.Request.MatchedParameters.GetValueOrDefault(&quot;deployment-id&quot;, &quot;&quot;))" />
+        <set-variable name="selected-backend" value="openai-backend-0" />
+        <trace source="auth-debug">Before authentication</trace>
+        <authentication-managed-identity resource="https://cognitiveservices.azure.com" output-token-variable-name="msi-access-token" ignore-error="false" />
+        <trace source="auth-debug">@("Token acquired: " + (context.Variables.ContainsKey("msi-access-token") ? "YES" : "NO"))</trace>
+        <set-header name="Authorization" exists-action="override">
+            <value>@(&quot;Bearer &quot; + (string)context.Variables[&quot;msi-access-token&quot;])</value>
+        </set-header>
+        <trace source="auth-debug">@("Authorization header: " + context.Request.Headers.GetValueOrDefault("Authorization", "MISSING"))</trace>
+        <set-backend-service backend-id="openai-backend-0" />
+        <include-fragment fragment-id="validate-routes" />
+        <azure-openai-token-limit counter-key="APIMOpenAI" tokens-per-minute="50000000" estimate-prompt-tokens="false" tokens-consumed-variable-name="TotalConsumedTokens" remaining-tokens-variable-name="TotalRemainingTokens" />
+        <include-fragment fragment-id="openai-usage-streaming" />
+    </inbound>
+    <backend>
+        <base />
+    </backend>
+    <outbound>
+        <base />
+        <include-fragment fragment-id="openai-usage" />
+    </outbound>
+    <on-error>
+        <base />
+        <set-variable name="service-name" value="Azure OpenAI" />
+        <set-variable name="target-deployment" value="@((string)context.Request.MatchedParameters[&quot;deployment-id&quot;])" />
+        <include-fragment fragment-id="throttling-events" />
+    </on-error>
+</policies>

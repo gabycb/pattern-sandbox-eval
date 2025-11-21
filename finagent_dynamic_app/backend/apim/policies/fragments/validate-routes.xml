@@ -1,0 +1,10 @@
+<fragment>
+  <choose>
+    <when condition="@(string.IsNullOrEmpty(context.Variables.GetValueOrDefault(&quot;deployment-id&quot;, &quot;&quot;)) &amp;&amp; string.IsNullOrEmpty(context.Variables.GetValueOrDefault(&quot;model-name&quot;, &quot;&quot;)))">
+      <return-response>
+        <set-status code="400" reason="MissingDeployment" />
+        <set-body>@(&quot;Missing deployment-id or model-name parameter&quot;)</set-body>
+      </return-response>
+    </when>
+  </choose>
+</fragment>

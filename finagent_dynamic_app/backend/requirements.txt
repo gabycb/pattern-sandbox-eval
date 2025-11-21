@@ -6,6 +6,7 @@ pydantic-settings
 python-dotenv
 python-multipart
 aiofiles
+httpx[http2]>=0.27.0
 
 # Logging & Telemetry
 structlog
@@ -22,8 +23,8 @@ azure-identity
 azure-storage-blob
 azure-cosmos
 azure-messaging-webpubsubservice
-azure-ai-agents>=1.2.0b5
-azure-ai-projects>=1.1.0b4
+# azure-ai-agents is deprecated - functionality moved to azure-ai-projects
+azure-ai-projects>=2.0.0b1
 
 # AI/ML
 openai>=1.99.0
@@ -55,4 +56,5 @@ ruff==0.7.3
 # - websockets (via mcp[ws])
 # - and other dependencies
 # IMPORTANT: Install agent-framework FIRST before other packages to avoid version conflicts
-agent-framework==1.0.0b251108
+# Updated to support new Azure AI Projects 2.0.0b1+ API (agents functionality consolidated)
+agent-framework>=1.0.0b251120

@@ -1,0 +1,139 @@
+{
+  "subscriptionId": "",
+  "resourceGroup": "",
+  "apimName": "",
+  "location": "eastus",
+  "diagnostics": {
+    "loggerId": "/subscriptions/<subid>/resourceGroups/astdnapublic/providers/microsoft.insights/components/astdnapubai",
+    "samplingPercentage": 100,
+    "alwaysLog": "allErrors"
+  },
+  "product": {
+    "name": "finagent-ai-gateway",
+    "displayName": "FinAgent AI Gateway",
+    "description": "Shared product for FinAgent traffic",
+    "approvalRequired": false,
+    "subscriptionsLimit": 5,
+    "state": "published",
+    "rateLimit": {
+      "calls": 600,
+      "renewalPeriodSeconds": 60,
+      "counterKey": "@(context.Subscription?.Id ?? context.Request.IpAddress)"
+    }
+  },
+  "namedValues": [
+    {
+      "name": "uami-client-id",
+      "displayName": "Gateway-User-Managed-Identity",
+      "value": "",
+      "secret": false,
+      "inlineInPolicies": true
+    },
+    {
+      "name": "entra-tenant-id",
+      "displayName": "Entra-Tenant-Id",
+      "value": "<tenant-id>",
+      "secret": false
+    },
+    {
+      "name": "entra-agent-client-id",
+      "displayName": "Agent-App-Client-Id",
+      "value": "",
+      "secret": false
+    },
+    {
+      "name": "entra-agent-client-secret",
+      "displayName": "Agent-App-Client-Secret",
+      "value": "<client-secret>",
+      "secret": true
+    }
+  ],
+  "backends": [
+    {
+      "name": "openai-backend-0",
+      "description": "Azure OpenAI East US",
+      "protocol": "http",
+      "url": "https://astdnapubaoai.openai.azure.com/",
+      "resourceId": "/subscriptions/<subid>/resourceGroups/astdnapublic/providers/Microsoft.CognitiveServices/accounts/astdnapubaoai",
+      "identityClientId": "<identity-client-id>"
+    },
+    {
+      "name": "openai-backend-1",
+      "description": "Azure OpenAI North Central US",
+      "protocol": "http",
+      "url": "https://astdnapubncus.openai.azure.com/",
+      "resourceId": "/subscriptions/<subid>/resourceGroups/astdnapublic/providers/Microsoft.CognitiveServices/accounts/astdnapubncus",
+      "identityClientId": "<identity-client-id>"
+    },
+    {
+      "name": "foundry-backend-0",
+      "description": "Azure AI Foundry Project",
+      "protocol": "http",
+      "url": "https://astdnaeus.services.ai.azure.com/",
+      "resourceId": "/subscriptions/<subid>/resourceGroups/astdnapublic/providers/Microsoft.ProjectBabylon/accounts/astdnaeus",
+      "identityClientId": "<identity-client-id>"
+    }
+  ],
+  "apis": [
+    {
+      "name": "astdnapubaoai",
+      "displayName": "Azure OpenAI Gateway",
+      "path": "astdnapubaoai",
+      "serviceUrl": null,
+      "protocols": ["https"],
+      "policyFile": "../policies/aoai-api-policy.xml"
+    },
+    {
+      "name": "astdnaeus",
+      "displayName": "Azure AI Foundry Gateway",
+      "path": "astdnaeus",
+      "serviceUrl": null,
+      "protocols": ["https"],
+      "policyFile": "../policies/foundry-api-policy.xml"
+    }
+  ],
+  "fragments": [
+    {
+      "name": "aad-auth",
+      "displayName": "AAD Authorization",
+      "description": "Validates incoming Agent ID tokens",
+      "format": "xml",
+      "file": "../policies/fragments/aad-auth.xml"
+    },
+    {
+      "name": "validate-routes",
+      "displayName": "Route Validation",
+      "description": "Ensures deployment is mapped to a backend",
+      "format": "xml",
+      "file": "../policies/fragments/validate-routes.xml"
+    },
+    {
+      "name": "backend-routing",
+      "displayName": "Backend Routing",
+      "description": "Routing and throttling metadata",
+      "format": "xml",
+      "file": "../policies/fragments/backend-routing.xml"
+    },
+    {
+      "name": "openai-usage",
+      "displayName": "OpenAI Usage",
+      "description": "Collects token metrics",
+      "format": "xml",
+      "file": "../policies/fragments/openai-usage.xml"
+    },
+    {
+      "name": "openai-usage-streaming",
+      "displayName": "OpenAI Streaming Usage",
+      "description": "Collects usage for SSE",
+      "format": "xml",
+      "file": "../policies/fragments/openai-usage-streaming.xml"
+    },
+    {
+      "name": "throttling-events",
+      "displayName": "Throttling Events",
+      "description": "Emits metrics when throttled",
+      "format": "xml",
+      "file": "../policies/fragments/throttling-events.xml"
+    }
+  ]
+}

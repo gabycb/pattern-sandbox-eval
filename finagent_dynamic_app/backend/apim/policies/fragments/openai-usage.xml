@@ -1,0 +1,5 @@
+<fragment>
+  <set-header name="x-apim-token-usage" exists-action="override">
+    <value>@($"prompt={context.Variables.GetValueOrDefault(&quot;PromptTokens&quot;, 0)};completion={context.Variables.GetValueOrDefault(&quot;CompletionTokens&quot;, 0)};total={context.Variables.GetValueOrDefault(&quot;TotalConsumedTokens&quot;, 0)}")</value>
+  </set-header>
+</fragment>

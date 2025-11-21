@@ -30,6 +30,36 @@ class Settings(BaseSettings):
     azure_openai_deployment: Optional[str] = Field(default=None, alias="AZURE_OPENAI_DEPLOYMENT")
     azure_openai_api_version: Optional[str] = Field(default="2024-08-01-preview", alias="AZURE_OPENAI_API_VERSION")
     
+    # Azure API Management (APIM) AI Gateway
+    apim_enabled: bool = Field(default=False, alias="APIM_ENABLED")
+    apim_gateway_url: Optional[str] = Field(default=None, alias="APIM_GATEWAY_URL")
+    apim_subscription_key: Optional[str] = Field(default=None, alias="APIM_SUBSCRIPTION_KEY")
+    apim_subscription_header: str = Field(default="Ocp-Apim-Subscription-Key", alias="APIM_SUBSCRIPTION_HEADER")
+    
+    # Entra Agent ID for APIM authentication
+    entra_agent_id_enabled: bool = Field(default=False, alias="ENTRA_AGENT_ID_ENABLED")
+    entra_agent_tenant_id: Optional[str] = Field(default=None, alias="ENTRA_AGENT_TENANT_ID")
+    entra_agent_client_id: Optional[str] = Field(default=None, alias="ENTRA_AGENT_CLIENT_ID")
+    entra_agent_client_secret: Optional[str] = Field(default=None, alias="ENTRA_AGENT_CLIENT_SECRET")
+    entra_agent_scope: str = Field(
+        default="https://cognitiveservices.azure.com/.default",
+        alias="ENTRA_AGENT_SCOPE"
+    )
+    
+    # APIM Feature Flags
+    apim_enable_load_balancing: bool = Field(default=True, alias="APIM_ENABLE_LOAD_BALANCING")
+    apim_enable_rate_limiting: bool = Field(default=True, alias="APIM_ENABLE_RATE_LIMITING")
+    apim_enable_content_filtering: bool = Field(default=True, alias="APIM_ENABLE_CONTENT_FILTERING")
+    apim_enable_token_tracking: bool = Field(default=True, alias="APIM_ENABLE_TOKEN_TRACKING")
+    apim_enable_caching: bool = Field(default=False, alias="APIM_ENABLE_CACHING")
+    
+    # APIM Monitoring
+    apim_log_analytics_workspace_id: Optional[str] = Field(default=None, alias="APIM_LOG_ANALYTICS_WORKSPACE_ID")
+    apim_application_insights_key: Optional[str] = Field(default=None, alias="APIM_APPLICATION_INSIGHTS_KEY")
+    apim_debug_mode: bool = Field(default=False, alias="APIM_DEBUG_MODE")
+    apim_log_request_body: bool = Field(default=False, alias="APIM_LOG_REQUEST_BODY")
+    apim_log_response_body: bool = Field(default=False, alias="APIM_LOG_RESPONSE_BODY")
+    
     # Financial Data APIs
     fmp_api_key: Optional[str] = Field(default=None, alias="FMP_API_KEY")
     yahoo_finance_enabled: bool = Field(default=True, alias="YAHOO_FINANCE_ENABLED")
@@ -150,6 +180,8 @@ class Settings(BaseSettings):
         """Uppercase alias for enable_m365_agent."""
         return self.enable_m365_agent
 
+    agent_log_format: str = Field(default="color", alias="AGENT_LOG_FORMAT")
+    
     @property
     def LOG_LEVEL(self) -> str:
         """Log level for the application."""
@@ -195,7 +227,13 @@ class Settings(BaseSettings):
     # Agent Configuration
     max_concurrent_agents: int = Field(default=5, alias="MAX_CONCURRENT_AGENTS")
     default_agent_timeout: int = Field(default=300, alias="DEFAULT_AGENT_TIMEOUT")
-    enable_agent_telemetry: bool = Field(default=True, alias="ENABLE_AGENT_TELEMETRY")
+    enable_agent_telemetry: bool = Field(default=False, alias="ENABLE_AGENT_TELEMETRY")
+    enable_agent_threads: bool = Field(default=False, alias="ENABLE_AGENT_THREADS")
+    enable_agent_conversations: bool = Field(default=False, alias="ENABLE_AGENT_CONVERSATIONS")
+    enable_application_insights_export: bool = Field(
+        default=False,
+        alias="ENABLE_APPLICATION_INSIGHTS_EXPORT",
+    )
     
     # Execution Configuration
     max_sequential_steps: int = Field(default=10, alias="MAX_SEQUENTIAL_STEPS")
@@ -217,6 +255,29 @@ class Settings(BaseSettings):
             return [origin.strip() for origin in self.cors_origins.split(",")]
         return self.cors_origins
 
+    @property
+    def APIM_ENABLED(self) -> bool:
+        """Uppercase alias for apim_enabled."""
+        return self.apim_enabled
+    
+    @property
+    def APIM_GATEWAY_URL(self) -> Optional[str]:
+        """Uppercase alias for apim_gateway_url."""
+        return self.apim_gateway_url
+    
+    @property
+    def ENTRA_AGENT_ID_ENABLED(self) -> bool:
+        """Uppercase alias for entra_agent_id_enabled."""
+        return self.entra_agent_id_enabled
+    
+    @property
+    def agent_log_format_normalized(self) -> str:
+        """Normalized log format value for renderer selection."""
+        value = (self.agent_log_format or "color").strip().lower()
+        if value not in {"json", "color", "console"}:
+            return "color"
+        return "color" if value in {"color", "console"} else "json"
+    
     def model_dump_safe(self) -> dict:
         """Dump settings without sensitive data."""
         data = self.model_dump()
@@ -224,7 +285,9 @@ class Settings(BaseSettings):
         sensitive_fields = [
             'azure_openai_api_key', 'fmp_api_key', 'sec_api_key',
             'azure_storage_connection_string', 'cosmos_db_key',
-            'applicationinsights_connection_string'
+            'applicationinsights_connection_string', 'cosmosdb_key',
+            'apim_subscription_key', 'entra_agent_client_secret',
+            'm365_client_secret', 'm365_bot_password'
         ]
         for field in sensitive_fields:
             if field in data and data[field]:

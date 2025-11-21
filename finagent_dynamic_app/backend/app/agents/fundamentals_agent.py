@@ -107,6 +107,7 @@ Be quantitative, use specific numbers, and highlight trends and anomalies."""
         
         context = kwargs.get("context", {})
         ticker = context.get("ticker", kwargs.get("ticker"))
+        session_id = kwargs.get("session_id")
         last_message = normalized_messages[-1]
         task = last_message.text if hasattr(last_message, 'text') else str(last_message)
         years = context.get("years", kwargs.get("years", 5))
@@ -141,7 +142,7 @@ Be quantitative, use specific numbers, and highlight trends and anomalies."""
         
         try:
             logger.info(f"FundamentalsAgent calling LLM for {ticker}")
-            response = await self._execute_llm(prompt)
+            response = await self._execute_llm(prompt, session_id=session_id)
             
             logger.info(
                 f"FundamentalsAgent LLM response received",
@@ -387,7 +388,7 @@ Be specific with numbers from the data above. Identify trends, anomalies, and pr
         
         return prompt
     
-    async def _execute_llm(self, prompt: str) -> str:
+    async def _execute_llm(self, prompt: str, session_id: Optional[str] = None) -> str:
         """Execute LLM call using agent_framework's AzureAIAgentClient."""
         if not self.chat_client:
             return f"[Simulated Fundamental Analysis]\n{prompt}"
@@ -401,9 +402,9 @@ Be specific with numbers from the data above. Identify trends, anomalies, and pr
         
         response = await self.chat_client.get_response(
             messages=messages,
-            temperature=0.7,
-            max_tokens=3000,
+            max_tokens=2000,
             store=True,
+            conversation_id=session_id,
             metadata={"maf_agent": self.name},
         )
         
@@ -422,8 +423,8 @@ Be specific with numbers from the data above. Identify trends, anomalies, and pr
                     if isinstance(content, TextContent):
                         yield AgentRunResponseUpdate(contents=[content], role=Role.ASSISTANT)
     
-    async def process(self, task: str, context: Dict[str, Any] = None) -> str:
+    async def process(self, task: str, context: Dict[str, Any] = None, session_id: Optional[str] = None) -> str:
         """Legacy method for YAML workflow compatibility."""
         context = context or {}
-        response = await self.run(messages=task, thread=None, ticker=context.get('ticker'), context=context)
+        response = await self.run(messages=task, thread=None, ticker=context.get('ticker'), context=context, session_id=session_id)
         return response.messages[-1].text if response.messages else ""

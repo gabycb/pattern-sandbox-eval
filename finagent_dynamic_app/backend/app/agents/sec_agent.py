@@ -124,6 +124,7 @@ Structure your analysis clearly with supporting evidence from the filings."""
         # Get context from kwargs
         context = kwargs.get("context", {})
         ticker = context.get("ticker", kwargs.get("ticker"))
+        session_id = kwargs.get("session_id")
         
         # Extract task from last message
         last_message = normalized_messages[-1]
@@ -157,7 +158,7 @@ Structure your analysis clearly with supporting evidence from the filings."""
         
         try:
             logger.info(f"SECAgent calling LLM for {ticker}")
-            response = await self._execute_llm(prompt)
+            response = await self._execute_llm(prompt, session_id=session_id)
             
             logger.info(
                 f"SECAgent LLM response received",
@@ -390,7 +391,7 @@ Be professional, analytical, and provide actionable insights for investment deci
         
         return prompt
     
-    async def _execute_llm(self, prompt: str) -> str:
+    async def _execute_llm(self, prompt: str, session_id: Optional[str] = None) -> str:
         """Execute LLM call using agent_framework's AzureAIAgentClient."""
         if not self.chat_client:
             return f"[Simulated SEC Analysis]\n{prompt}"
@@ -404,9 +405,9 @@ Be professional, analytical, and provide actionable insights for investment deci
         
         response = await self.chat_client.get_response(
             messages=messages,
-            temperature=0.7,
-            max_tokens=2500,
+            max_tokens=2000,
             store=True,
+            conversation_id=session_id,
             metadata={"maf_agent": self.name},
         )
         
@@ -452,8 +453,8 @@ Be professional, analytical, and provide actionable insights for investment deci
                             role=Role.ASSISTANT
                         )
     
-    async def process(self, task: str, context: Dict[str, Any] = None) -> str:
+    async def process(self, task: str, context: Dict[str, Any] = None, session_id: Optional[str] = None) -> str:
         """Legacy method for YAML-based workflow compatibility."""
         context = context or {}
-        response = await self.run(messages=task, thread=None, ticker=context.get('ticker'), context=context)
+        response = await self.run(messages=task, thread=None, ticker=context.get('ticker'), context=context, session_id=session_id)
         return response.messages[-1].text if response.messages else ""

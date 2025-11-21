@@ -1,0 +1,3 @@
+echo Starting Backend...
+cd d:\repos\agent_foundation\finagent_dynamic_app\backend
+python -m uvicorn app.main:app --reload  --log-level debug

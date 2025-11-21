@@ -76,13 +76,14 @@ Style Guidelines:
             "generate_recommendation"
         ]
     
-    async def process(self, task: str, context: Dict[str, Any]) -> str:
+    async def process(self, task: str, context: Dict[str, Any], session_id: Optional[str] = None) -> str:
         """
         Process a report generation task (compatible with TaskOrchestrator).
         
         Args:
             task: Task description
             context: Execution context with ticker and previous_results
+            session_id: Session ID for conversation tracking
             
         Returns:
             Report text
@@ -91,11 +92,12 @@ Style Guidelines:
             "ReportAgent.process() called",
             task_preview=task[:100],
             context_keys=list(context.keys()),
-            ticker=context.get('ticker')
+            ticker=context.get('ticker'),
+            session_id=session_id
         )
         
         # Call run() and extract text from response
-        response = await self.run(messages=task, context=context)
+        response = await self.run(messages=task, context=context, session_id=session_id)
         result_text = response.messages[-1].text if response.messages else "No report generated"
         
         logger.info(
@@ -116,6 +118,7 @@ Style Guidelines:
         task = self._extract_task(messages)
         context = kwargs.get("context", {})
         ticker = context.get("ticker", kwargs.get("ticker"))
+        session_id = kwargs.get("session_id")
         artifacts = context.get("artifacts", [])
         
         logger.info(
@@ -128,7 +131,7 @@ Style Guidelines:
         prompt = self._build_report_prompt(ticker, artifacts, context)
         
         try:
-            response = await self._execute_llm(prompt)
+            response = await self._execute_llm(prompt, session_id=session_id)
             result_text = f"""## Equity Research Brief: {ticker}
 
 {response}
@@ -284,7 +287,7 @@ Use clear, professional language. Include specific numbers. Be balanced and obje
                 return content[:500] + ("..." if len(content) > 500 else "")
         return None
     
-    async def _execute_llm(self, prompt: str) -> str:
+    async def _execute_llm(self, prompt: str, session_id: Optional[str] = None) -> str:
         """Execute LLM call using agent_framework's AzureAIAgentClient."""
         if not self.chat_client:
             return f"[Simulated Report]\n{prompt}"
@@ -298,9 +301,9 @@ Use clear, professional language. Include specific numbers. Be balanced and obje
         
         response = await self.chat_client.get_response(
             messages=messages,
-            temperature=0.7,
-            max_tokens=4000,
+            max_tokens=2000,
             store=True,
+            conversation_id=session_id,
             metadata={"maf_agent": self.name},
         )
         

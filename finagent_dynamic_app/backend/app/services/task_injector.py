@@ -188,24 +188,32 @@ class TaskInjector:
                 break
 
         if existing_agent is None:
-            logger.info("TaskInjector: Creating Azure AI agent", agent_name=self._agent_name)
+            logger.info("TaskInjector: Creating Azure AI agent (v2)", agent_name=self._agent_name)
             description = "Analyzes plan injection requests for the financial research application"
             instructions = (
                 "You analyze user task injection requests and output structured analysis including "
                 "the action to take, reasoning, agents involved, and dependencies."
             )
-            created = await project_client.agents.create_agent(
-                name=self._agent_name,
+            # Use v2 Agents API with PromptAgentDefinition
+            from azure.ai.projects.models import PromptAgentDefinition
+            
+            agent_def = PromptAgentDefinition(
                 model=settings.azure_ai_model_deployment_name,
-                description=description,
-                instructions=instructions,
+                instructions=instructions
+            )
+            
+            created = await project_client.agents.create(
+                name=self._agent_name,
+                definition=agent_def,
+                description=description
             )
             target_agent = created
         else:
             logger.info("TaskInjector: Reusing existing Azure AI agent", agent_name=self._agent_name)
             target_agent = existing_agent
 
-        self.llm_client.agent_id = str(target_agent.id)
+        # Don't set agent_id - this forces v1 Assistants API instead of v2 Agents API
+        # Azure AI Projects SDK 2.0 uses prompt templates (v2), not assistants (v1)
         self.llm_client.agent_name = target_agent.name
         if getattr(self.llm_client, "model_deployment_name", None) is not None:
             self.llm_client.model_deployment_name = settings.azure_ai_model_deployment_name

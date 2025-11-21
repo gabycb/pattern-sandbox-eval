@@ -185,6 +185,7 @@ Be data-driven, factual, and provide actionable insights."""
         # Get context from kwargs
         context = kwargs.get("context", {})
         ticker = context.get("ticker", kwargs.get("ticker"))
+        session_id = kwargs.get("session_id")
         
         # Log what we received
         logger.info(
@@ -192,6 +193,7 @@ Be data-driven, factual, and provide actionable insights."""
             ticker_from_context=context.get("ticker"),
             ticker_from_kwargs=kwargs.get("ticker"),
             final_ticker=ticker,
+            session_id=session_id,
             all_kwargs_keys=list(kwargs.keys())
         )
         
@@ -224,7 +226,7 @@ Be data-driven, factual, and provide actionable insights."""
         # Execute with Azure AI Agents
         try:
             logger.info(f"CompanyAgent calling LLM for {ticker}")
-            response = await self._execute_llm(prompt)
+            response = await self._execute_llm(prompt, session_id=session_id)
             
             logger.info(
                 f"CompanyAgent LLM response received",
@@ -588,7 +590,7 @@ Include specific numbers and dates where available."""
         
         return prompt
     
-    async def _execute_llm(self, prompt: str) -> str:
+    async def _execute_llm(self, prompt: str, session_id: Optional[str] = None) -> str:
         """Execute LLM call using agent_framework's AzureAIAgentClient."""
         if not self.chat_client:
             logger.warning("No chat client configured, returning simulated response")
@@ -597,7 +599,7 @@ Include specific numbers and dates where available."""
         import time
         start_time = time.time()
 
-        logger.info("Calling Azure AI via agent_framework", model=self.model, prompt_length=len(prompt))
+        logger.info("Calling Azure AI via agent_framework", model=self.model, prompt_length=len(prompt), session_id=session_id)
 
         # Use Microsoft Agent Framework's chat client
         from agent_framework import ChatMessage, Role
@@ -609,9 +611,9 @@ Include specific numbers and dates where available."""
         
         response = await self.chat_client.get_response(
             messages=messages,
-            temperature=0.7,
             max_tokens=2000,
             store=True,
+            conversation_id=session_id,
             metadata={"maf_agent": self.name},
         )
         
@@ -724,7 +726,7 @@ Include specific numbers and dates where available."""
                             role=Role.ASSISTANT
                         )
     
-    async def process(self, task: str, context: Dict[str, Any] = None) -> str:
+    async def process(self, task: str, context: Dict[str, Any] = None, session_id: Optional[str] = None) -> str:
         """Legacy method for YAML-based workflow compatibility."""
         context = context or {}
         logger.info(
@@ -732,11 +734,12 @@ Include specific numbers and dates where available."""
             task=task[:100] if task else "None",
             context_keys=list(context.keys()),
             ticker=context.get('ticker'),
+            session_id=session_id,
             agent_name=self.name
         )
         
         # Pass context via kwargs so run() can access it
-        response = await self.run(messages=task, thread=None, ticker=context.get('ticker'), context=context)
+        response = await self.run(messages=task, thread=None, ticker=context.get('ticker'), context=context, session_id=session_id)
         result = response.messages[-1].text if response.messages else ""
         logger.info(
             "CompanyAgent.process() completed",

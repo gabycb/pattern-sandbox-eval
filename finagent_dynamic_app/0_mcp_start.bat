@@ -1,0 +1,3 @@
+echo Starting MCP Server...
+cd d:\repos\agent_foundation\finagent_dynamic_app\backend\mcp_servers
+python start_server.py

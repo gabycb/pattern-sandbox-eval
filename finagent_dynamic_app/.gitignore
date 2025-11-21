@@ -123,4 +123,3 @@ frontend/package-lock.json
 finagent_dynamic_app/backend/app/static/*
 temp.py
 gateway.config.json*
-finagent_dynamic_app/backend/apim/config/gateway.config.json

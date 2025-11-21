@@ -64,11 +64,24 @@ class MAFDynamicPlanner:
         prompt = self._build_prompt(objective, files_info, summary_type, persona, ticker)
         logger.debug("Generating plan with financial MAF planner", objective_preview=objective[:80])
 
+        logger.info(
+            "[AGENT_CREATION_DEBUG] About to call planner_agent.run()",
+            agent_name=self._planner_agent.name,
+            agent_has_id=hasattr(self._planner_agent, 'id') and self._planner_agent.id is not None,
+            agent_id=getattr(self._planner_agent, 'id', None),
+            agent_has_chat_client=hasattr(self._planner_agent, 'chat_client') and self._planner_agent.chat_client is not None,
+            chat_client_has_agent_id=hasattr(self._planner_agent.chat_client, 'agent_id') if hasattr(self._planner_agent, 'chat_client') else False,
+            chat_client_agent_id=getattr(self._planner_agent.chat_client, 'agent_id', None) if hasattr(self._planner_agent, 'chat_client') else None,
+            chat_client_agent_name=getattr(self._planner_agent.chat_client, 'agent_name', None) if hasattr(self._planner_agent, 'chat_client') else None
+        )
+
         response = await self._planner_agent.run(
             messages=[
                 ChatMessage(role=Role.USER, contents=[TextContent(text=prompt)]),
             ]
         )
+        
+        logger.info("[AGENT_CREATION_DEBUG] planner_agent.run() completed")
 
         plan_text = self._extract_text(response)
         steps = self.parse_plan_text(

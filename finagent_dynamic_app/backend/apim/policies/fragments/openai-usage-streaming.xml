@@ -1,0 +1,8 @@
+<fragment>
+  <choose>
+    <when condition="@(bool.Parse((string)context.Variables.GetValueOrDefault(&quot;isStream&quot;, &quot;false&quot;)))">
+      <set-variable name="PromptTokens" value="0" />
+      <set-variable name="CompletionTokens" value="0" />
+    </when>
+  </choose>
+</fragment>

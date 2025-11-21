@@ -144,6 +144,7 @@ Be data-driven, factual, and transparent about uncertainty."""
         # Get context from kwargs
         context = kwargs.get("context", {})
         ticker = context.get("ticker", kwargs.get("ticker"))
+        session_id = kwargs.get("session_id")
         
         # Log what we received
         logger.info(
@@ -182,7 +183,7 @@ Be data-driven, factual, and transparent about uncertainty."""
         # Execute with Azure AI Agents
         try:
             logger.info(f"ForecasterAgent calling LLM for {ticker}")
-            response = await self._execute_llm(prompt)
+            response = await self._execute_llm(prompt, session_id=session_id)
             
             logger.info(
                 f"ForecasterAgent LLM response received",
@@ -445,7 +446,7 @@ Provide your forecast analysis based on the task requirements and available data
         
         return prompt
     
-    async def _execute_llm(self, prompt: str) -> str:
+    async def _execute_llm(self, prompt: str, session_id: Optional[str] = None) -> str:
         """Execute LLM call using agent_framework's AzureAIAgentClient."""
         if not self.chat_client:
             logger.warning("No chat client configured, returning simulated response")
@@ -466,10 +467,10 @@ Provide your forecast analysis based on the task requirements and available data
         
         response = await self.chat_client.get_response(
             messages=messages,
-            temperature=0.5,  # Slightly higher for creative forecasting
-                max_tokens=1500,
-                store=True,
-                metadata={"maf_agent": self.name},
+            max_tokens=1500,
+            store=True,
+            conversation_id=session_id,
+            metadata={"maf_agent": self.name},
         )
         
         duration = time.time() - start_time
@@ -533,7 +534,7 @@ Provide your forecast analysis based on the task requirements and available data
                             role=Role.ASSISTANT
                         )
     
-    async def process(self, task: str, context: Dict[str, Any] = None) -> str:
+    async def process(self, task: str, context: Dict[str, Any] = None, session_id: Optional[str] = None) -> str:
         """Legacy method for YAML-based workflow compatibility."""
         context = context or {}
         logger.info(
@@ -541,10 +542,11 @@ Provide your forecast analysis based on the task requirements and available data
             task=task[:100] if task else "None",
             context_keys=list(context.keys()),
             ticker=context.get('ticker'),
+            session_id=session_id,
             agent_name=self.name
         )
         
-        response = await self.run(messages=task, thread=None, ticker=context.get('ticker'), context=context)
+        response = await self.run(messages=task, thread=None, ticker=context.get('ticker'), context=context, session_id=session_id)
         result = response.messages[-1].text if response.messages else ""
         logger.info(
             "ForecasterAgent.process() completed",

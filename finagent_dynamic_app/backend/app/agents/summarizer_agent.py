@@ -101,6 +101,7 @@ Be concise, focused, and directly address the summarization task."""
         
         # Get context from kwargs
         context = kwargs.get("context", {})
+        session_id = kwargs.get("session_id")
         
         # Extract task from last message
         last_message = normalized_messages[-1]
@@ -135,9 +136,9 @@ Be concise, focused, and directly address the summarization task."""
             logger.info("Calling chat client for summary generation")
             response = await self.chat_client.get_response(
                 messages=chat_messages,
-                temperature=0.3,
                 max_tokens=2000,
                 store=True,
+                conversation_id=session_id,
                 metadata={"maf_agent": self.name},
             )
             
@@ -312,7 +313,7 @@ Be concise, focused, and directly address the summarization task."""
             }
         }
     
-    async def process(self, task: str, context: Dict[str, Any] = None) -> str:
+    async def process(self, task: str, context: Dict[str, Any] = None, session_id: Optional[str] = None) -> str:
         """
         Legacy method for YAML-based workflow compatibility.
         This is called by the orchestrator with the context dict.
@@ -324,11 +325,12 @@ Be concise, focused, and directly address the summarization task."""
             context_keys=list(context.keys()),
             has_session_context=bool(context.get("session_context")),
             has_dependency_artifacts=bool(context.get("dependency_artifacts")),
+            session_id=session_id,
             agent_name=self.name
         )
         
         # Pass context via kwargs so run() can access it
-        response = await self.run(messages=task, thread=None, context=context)
+        response = await self.run(messages=task, thread=None, context=context, session_id=session_id)
         result = response.messages[-1].text if response.messages else ""
         logger.info(
             "SummarizerAgent.process() completed",

@@ -1,0 +1,3 @@
+echo Starting Frontend...
+cd d:\repos\agent_foundation\finagent_dynamic_app\frontend
+npm run dev

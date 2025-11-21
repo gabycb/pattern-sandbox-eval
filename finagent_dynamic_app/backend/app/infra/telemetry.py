@@ -5,6 +5,7 @@ Integrates with Azure Application Insights and OpenTelemetry.
 """
 
 import logging
+import os
 from typing import Optional
 from opentelemetry import trace
 from opentelemetry.sdk.trace import TracerProvider
@@ -30,18 +31,29 @@ class TelemetryService:
         
     def initialize(self, app=None):
         """Initialize telemetry with optional FastAPI app."""
-        self._setup_logging()
+        self._suppress_external_loggers()
         
-        if self.settings.enable_agent_telemetry:
-            self._setup_tracing()
-            
-            if app and self.instrumentor is None:
-                # Instrument FastAPI
-                self.instrumentor = FastAPIInstrumentor.instrument_app(app)
-                logger.info("FastAPI telemetry instrumentation enabled")
+        if not self.settings.enable_agent_telemetry:
+            logger.info("Agent telemetry disabled via settings")
+            return
+
+        self._setup_logging()
+        self._setup_tracing()
+        
+        if app and self.instrumentor is None:
+            # Instrument FastAPI
+            self.instrumentor = FastAPIInstrumentor.instrument_app(app)
+            logger.info("FastAPI telemetry instrumentation enabled")
     
     def _setup_logging(self):
         """Configure structured logging."""
+        log_format = self.settings.agent_log_format_normalized
+        if log_format == "json":
+            renderer = structlog.processors.JSONRenderer()
+        else:
+            renderer = structlog.dev.ConsoleRenderer(colors=True)
+            log_format = "color"
+        
         structlog.configure(
             processors=[
                 structlog.stdlib.filter_by_level,
@@ -52,7 +64,7 @@ class TelemetryService:
                 structlog.processors.StackInfoRenderer(),
                 structlog.processors.format_exc_info,
                 structlog.processors.UnicodeDecoder(),
-                structlog.processors.JSONRenderer()
+                renderer
             ],
             wrapper_class=structlog.stdlib.BoundLogger,
             logger_factory=structlog.stdlib.LoggerFactory(),
@@ -64,7 +76,23 @@ class TelemetryService:
             level=logging.INFO,
         )
         
-        logger.info("Structured logging configured")
+        logger.info("Structured logging configured", format=log_format)
+    
+    def _suppress_external_loggers(self):
+        """Quiet noisy Azure/OTEL loggers unless explicitly re-enabled."""
+        os.environ.setdefault("AZURE_LOG_LEVEL", "warning")
+        noisy_loggers = {
+            "azure": logging.WARNING,
+            "azure.core": logging.WARNING,
+            "azure.identity": logging.WARNING,
+            "azure.monitor": logging.WARNING,
+            "azure.ai": logging.WARNING,
+            "azure.core.pipeline.policies.http_logging_policy": logging.ERROR,
+            "opentelemetry": logging.ERROR,
+            "opentelemetry.sdk": logging.ERROR,
+        }
+        for name, level in noisy_loggers.items():
+            logging.getLogger(name).setLevel(level)
     
     def _setup_tracing(self):
         """Configure OpenTelemetry tracing."""
@@ -72,8 +100,11 @@ class TelemetryService:
         self.tracer_provider = TracerProvider()
         trace.set_tracer_provider(self.tracer_provider)
         
-        # Add Azure Monitor exporter if configured
-        if self.settings.applicationinsights_connection_string:
+        # Add Azure Monitor exporter if configured and explicitly enabled
+        if (
+            self.settings.enable_application_insights_export
+            and self.settings.applicationinsights_connection_string
+        ):
             exporter = AzureMonitorTraceExporter(
                 connection_string=self.settings.applicationinsights_connection_string
             )
