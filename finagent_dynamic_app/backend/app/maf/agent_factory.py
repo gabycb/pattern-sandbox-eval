@@ -4,17 +4,104 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from typing import Any, Dict, Optional, Type
+from functools import wraps
 
 import structlog
 
 from agent_framework import ChatAgent
 from agent_framework.azure import AzureAIClient
-from azure.identity.aio import DefaultAzureCredential
+from azure.identity.aio import DefaultAzureCredential, ClientSecretCredential
 from azure.ai.projects.aio import AIProjectClient
+from openai import AsyncOpenAI
 
 from ..infra.settings import Settings
 
 logger = structlog.get_logger(__name__)
+
+
+class APIMHeaderInjector:
+    """Wrapper that creates a direct OpenAI client for agent execution bypassing APIM.
+    
+    Strategy: When APIM is enabled, we want:
+    1. AIProjectClient (agent management) -> APIM gateway -> backend
+    2. OpenAI client (agent execution) -> Direct to Azure AI Foundry
+    
+    This avoids the path collision where APIM routing breaks OpenAI client URLs.
+    """
+    
+    def __init__(self, client: AzureAIClient, apim_headers: Dict[str, str], direct_endpoint: str, credential, model_deployment: str):
+        self._wrapped_client = client
+        self._apim_headers = apim_headers
+        self._direct_endpoint = direct_endpoint
+        self._credential = credential
+        self._model_deployment = model_deployment
+        self._direct_openai_client = None
+        self._patched = False
+        logger.info("Created APIM bypass wrapper for direct OpenAI execution", 
+                   direct_endpoint=direct_endpoint[:50] + "...",
+                   model=model_deployment)
+    
+    async def _create_direct_openai_client(self):
+        """Create a direct OpenAI client that bypasses APIM for agent execution."""
+        if self._direct_openai_client is not None:
+            return self._direct_openai_client
+        
+        # Get token from credential for direct connection to Azure AI Foundry
+        token = self._credential.get_token("https://ai.azure.com/.default")
+        
+        # Create direct OpenAI client pointing to Azure AI Foundry
+        # Format: https://astaieus2.services.ai.azure.com/api/projects/astaieus2proj/openai
+        openai_base_url = f"{self._direct_endpoint}/openai"
+        
+        self._direct_openai_client = AsyncOpenAI(
+            base_url=openai_base_url,
+            api_key=token.token,
+            default_query={
+                "api-version": "2025-11-15-preview"
+            }
+        )
+        
+        logger.info("✅ Created direct OpenAI client bypassing APIM",
+                   base_url=openai_base_url,
+                   deployment=self._model_deployment)
+        
+        return self._direct_openai_client
+    
+    def _patch_initialize_client(self):
+        """Monkey-patch initialize_client to use our direct OpenAI client."""
+        if self._patched:
+            return
+        
+        # Store original method
+        self._original_initialize_client = self._wrapped_client.initialize_client
+        
+        # Create new initialize_client that uses direct connection
+        async def direct_initialize_client():
+            """Initialize with direct OpenAI client instead of APIM-routed one."""
+            if self._wrapped_client.client is None:
+                logger.debug("Creating direct OpenAI client for agent execution")
+                self._wrapped_client.client = await self._create_direct_openai_client()
+                logger.debug("✅ Set direct OpenAI client", client_type=type(self._wrapped_client.client).__name__)
+            else:
+                logger.debug("Direct OpenAI client already exists")
+        
+        # Replace the method
+        self._wrapped_client.initialize_client = direct_initialize_client
+        self._patched = True
+        logger.info("✅ Patched initialize_client to use direct OpenAI connection")
+    
+    async def get_response(self, *args, **kwargs):
+        """Intercept get_response to ensure direct OpenAI client is used."""
+        # Patch initialize_client on first call
+        if not self._patched:
+            self._patch_initialize_client()
+        
+        # Now call get_response - it will use our direct OpenAI client
+        return await self._wrapped_client.get_response(*args, **kwargs)
+    
+    def __getattr__(self, name):
+        """Delegate all other attributes to the wrapped client."""
+        return getattr(self._wrapped_client, name)
 
 _MODELS_WITHOUT_TEMPERATURE = {"chato1", "chat41mini", "chat4omini"}
 
@@ -65,6 +152,27 @@ class MAFAgentFactory:
             )
 
         try:
+            # Determine endpoint based on APIM configuration
+            if settings.apim_enabled:
+                if not settings.apim_gateway_url:
+                    raise ValueError("APIM_GATEWAY_URL is required when APIM_ENABLED=true")
+                
+                # Route through APIM Gateway
+                endpoint = settings.apim_gateway_url
+                logger.info(
+                    "APIM routing enabled - requests will go through API Management",
+                    apim_gateway=settings.apim_gateway_url,
+                    direct_endpoint=settings.azure_ai_project_endpoint,
+                    auth_type="entra_agent_id" if settings.entra_agent_id_enabled else "subscription_key"
+                )
+            else:
+                # Direct connection to Azure AI Foundry
+                endpoint = settings.azure_ai_project_endpoint
+                logger.info(
+                    "APIM disabled - using direct Azure AI Foundry connection",
+                    endpoint=endpoint
+                )
+            
             # Use synchronous ClientSecretCredential to avoid Windows aiodns issues
             # The sync credential works with async clients via internal wrapping
             if settings.azure_tenant_id and settings.azure_client_id and settings.azure_client_secret:
@@ -79,21 +187,198 @@ class MAFAgentFactory:
                 self._credential = DefaultAzureCredential(exclude_interactive_browser_credential=True)
                 logger.debug("Using DefaultAzureCredential")
             
-            # Create AIProjectClient for direct agent management
-            self._project_client = AIProjectClient(
-                endpoint=settings.azure_ai_project_endpoint,
-                credential=self._credential,
+            # Create custom HTTP transport for APIM that adds subscription key
+            transport = None
+            
+            if settings.apim_enabled:
+                from azure.core.pipeline.transport import AsyncHttpTransport, AsyncHttpResponse
+                from azure.core.rest import HttpRequest
+                import httpx
+                
+                # Custom response wrapper that provides body() method
+                class APIMHttpResponse(AsyncHttpResponse):
+                    """Response wrapper that implements body() method for httpx responses."""
+                    
+                    def __init__(self, request, httpx_response):
+                        super().__init__(request, httpx_response)
+                        self._httpx_response = httpx_response
+                        self._body_bytes = None
+                        # Set status_code for retry policy
+                        self.status_code = httpx_response.status_code
+                    
+                    def body(self):
+                        """Return response body as bytes."""
+                        if self._body_bytes is None:
+                            self._body_bytes = self._httpx_response.content
+                        return self._body_bytes
+                    
+                    def text(self, encoding=None):
+                        """Return response body as text."""
+                        if encoding:
+                            return self.body().decode(encoding)
+                        return self._httpx_response.text
+                    
+                    def json(self):
+                        """Return response body as JSON."""
+                        return self._httpx_response.json()
+                
+                class APIMAsyncHttpTransport(AsyncHttpTransport):
+                    """Custom transport that adds APIM subscription key to all requests."""
+                    
+                    def __init__(self, subscription_key: str, header_name: str):
+                        self.subscription_key = subscription_key
+                        self.header_name = header_name
+                        self.client = httpx.AsyncClient(
+                            timeout=httpx.Timeout(120.0, connect=30.0),
+                            limits=httpx.Limits(max_keepalive_connections=5, max_connections=10),
+                            http2=False,  # Disable HTTP/2 to avoid TLS handshake issues
+                            follow_redirects=False,
+                            verify=True
+                        )
+                        logger.debug("Created APIM httpx async transport with subscription key")
+                    
+                    async def open(self):
+                        """Open the transport."""
+                        pass
+                    
+                    async def close(self):
+                        """Close the httpx client."""
+                        await self.client.aclose()
+                    
+                    async def __aenter__(self):
+                        """Async context manager entry."""
+                        await self.open()
+                        return self
+                    
+                    async def __aexit__(self, exc_type, exc_val, exc_tb):
+                        """Async context manager exit."""
+                        await self.close()
+                    
+                    async def send(self, request: HttpRequest, **kwargs):
+                        """Send HTTP request with APIM subscription key header."""
+                        # Build headers dict and add APIM subscription key
+                        headers = dict(request.headers)
+                        
+                        # Remove Authorization header - APIM will use managed identity to authenticate to backend
+                        if 'Authorization' in headers:
+                            del headers['Authorization']
+                        
+                        # Add subscription key with both common header names for compatibility
+                        headers[self.header_name] = self.subscription_key
+                        headers['api-key'] = self.subscription_key
+                        headers['Ocp-Apim-Subscription-Key'] = self.subscription_key
+                        
+                        logger.debug(
+                            "Sending request through APIM with subscription key",
+                            url=str(request.url)[:100],
+                            method=request.method,
+                            has_subscription_key=self.header_name in headers,
+                            header_name=self.header_name,
+                            headers_keys=list(headers.keys())[:10]
+                        )
+                        
+                        # Filter kwargs to only include httpx-compatible parameters
+                        # Remove Azure SDK-specific parameters that httpx doesn't understand
+                        httpx_kwargs = {}
+                        allowed_params = {'timeout', 'follow_redirects', 'extensions'}
+                        for key, value in kwargs.items():
+                            if key in allowed_params:
+                                httpx_kwargs[key] = value
+                        
+                        # Send via httpx with headers including subscription key
+                        httpx_response = await self.client.request(
+                            method=request.method,
+                            url=str(request.url),
+                            headers=headers,
+                            content=request.content,
+                            **httpx_kwargs
+                        )
+                        
+                        # Create custom response wrapper that implements body() method
+                        response = APIMHttpResponse(request, httpx_response)
+                        
+                        logger.debug(
+                            "Received response from APIM",
+                            status_code=httpx_response.status_code,
+                            url=str(request.url)[:100]
+                        )
+                        
+                        return response
+                
+                # Add APIM subscription key (required for APIM gateway authentication)
+                if settings.apim_subscription_key:
+                    transport = APIMAsyncHttpTransport(
+                        subscription_key=settings.apim_subscription_key,
+                        header_name=settings.apim_subscription_header
+                    )
+                    logger.info(
+                        "Created APIM custom transport with subscription key",
+                        header=settings.apim_subscription_header,
+                        key_preview=settings.apim_subscription_key[:8] + "..." if settings.apim_subscription_key else None
+                    )
+                else:
+                    logger.warning(
+                        "APIM enabled but no subscription key provided - requests will fail",
+                        apim_gateway=settings.apim_gateway_url
+                    )
+            
+            # Create AIProjectClient with the determined endpoint (APIM or direct)
+            # When using APIM, use custom transport that adds subscription key header
+            # APIM backend uses managed identity to call Azure AI Foundry
+            client_kwargs = {
+                "endpoint": endpoint,
+                "credential": self._credential,
+            }
+            
+            if transport:
+                client_kwargs["transport"] = transport
+            
+            self._project_client = AIProjectClient(**client_kwargs)
+            
+            logger.info(
+                "Created AIProjectClient",
+                endpoint=endpoint,
+                routing="APIM" if settings.apim_enabled else "Direct",
+                has_custom_transport=bool(transport)
             )
             
             # Create V2 AzureAIClient with the project_client
             # This is used as a fallback/shared client; individual agents get their own V2 clients
-            client = AzureAIClient(
-                project_client=self._project_client,
-                model_deployment_name=settings.azure_ai_model_deployment_name,
-            )
+            client_kwargs = {
+                "project_client": self._project_client,
+                "model_deployment_name": settings.azure_ai_model_deployment_name,
+            }
+            
+            # For APIM routing, monkey-patch the openai client creation to add headers
+            if settings.apim_enabled and settings.apim_subscription_key:
+                logger.debug("APIM enabled - will add subscription headers to OpenAI client")
+                # Store APIM config for later use when OpenAI client is created
+                self._apim_headers = {
+                    "api-key": settings.apim_subscription_key,
+                    "Ocp-Apim-Subscription-Key": settings.apim_subscription_key,
+                }
+            
+            client = AzureAIClient(**client_kwargs)
+            
+            # Wrap client with APIM header injector if APIM is enabled
+            if settings.apim_enabled and settings.apim_subscription_key:
+                apim_headers = {
+                    "api-key": settings.apim_subscription_key,
+                    "Ocp-Apim-Subscription-Key": settings.apim_subscription_key,
+                }
+                client = APIMHeaderInjector(
+                    client, 
+                    apim_headers, 
+                    settings.azure_ai_project_endpoint,
+                    self._credential,
+                    settings.azure_ai_model_deployment_name
+                )
+            
             logger.info(
                 "[AGENT_CREATION_DEBUG] Created shared AzureAIClient (V2)",
                 model=settings.azure_ai_model_deployment_name,
+                routing="APIM" if settings.apim_enabled else "Direct",
+                endpoint=endpoint,
                 has_agent_name=hasattr(client, 'agent_name') and client.agent_name is not None
             )
             return client
@@ -199,9 +484,8 @@ class MAFAgentFactory:
                     " and sentiment signals. Provide base, bull, and bear scenarios when helpful."
                 ),
                 tags=("forecasting", "scenarios"),
-                defaults={"temperature": 0.5},
                 azure_name="financial-forecaster-agent",
-                model_deployment_name="chat4omini",
+                model_deployment_name="chato4mini",
             )
         )
 
@@ -452,11 +736,28 @@ class MAFAgentFactory:
                 logger.info("Created new version for Azure AI agent (v2)", agent_type=definition.type_name, agent_name=azure_name, version=agent_version)
             
             # Use V2 AzureAIClient to reference pre-created V2 agents by name and version
-            agent_client = AzureAIClient(
-                project_client=self._project_client,
-                agent_name=azure_name,
-                agent_version=agent_version,
-            )
+            agent_client_kwargs = {
+                "project_client": self._project_client,
+                "agent_name": azure_name,
+                "agent_version": agent_version,
+            }
+            
+            agent_client = AzureAIClient(**agent_client_kwargs)
+            
+            # Wrap agent client with APIM header injector if APIM is enabled
+            if self._settings.apim_enabled and self._settings.apim_subscription_key:
+                apim_headers = {
+                    "api-key": self._settings.apim_subscription_key,
+                    "Ocp-Apim-Subscription-Key": self._settings.apim_subscription_key,
+                }
+                agent_client = APIMHeaderInjector(
+                    agent_client, 
+                    apim_headers,
+                    self._settings.azure_ai_project_endpoint,
+                    self._credential,
+                    agent_model
+                )
+                logger.debug(f"Wrapped agent {azure_name} client with APIM bypass wrapper", agent=azure_name)
             logger.info(
                 "[AGENT_CREATION_DEBUG] Created agent-specific AzureAIClient (V2)",
                 agent_type=definition.type_name,

@@ -1,22 +1,10 @@
 <policies>
     <inbound>
         <base />
-        <set-variable name="X-ConditionCheck" value="false" />
-        <set-variable name="OpenAiPathIndex" value="@(context.Request.Url.Path.IndexOf("openai", System.StringComparison.OrdinalIgnoreCase))" />
-        <choose>
-        <when condition="@((int)context.Variables["OpenAiPathIndex"] >= 0)">
-        <set-variable name="X-ConditionCheck" value="OpenAi" />
-        <set-backend-service backend-id="astaieus2-openai" />
-        <rewrite-uri template="@((string)context.Request.Url.Path.Substring((int)context.Variables["OpenAiPathIndex"]))" />
-        <set-query-parameter name="api-version" exists-action="override">
-        <value>@(context.Request.Url.Query.GetValueOrDefault("api-version") ?? "2024-05-01-preview")</value>
-        </set-query-parameter>
-        </when>
-        <otherwise>
-        <set-variable name="X-ConditionCheck" value="Foundry" />
+        <!-- All Azure AI Foundry requests (agent management + execution) go to same backend -->
         <set-backend-service backend-id="astaieus2" />
-        </otherwise>
-        </choose>
+        <!-- Authenticate to backend using APIM's managed identity -->
+        <authentication-managed-identity resource="https://ai.azure.com/" />
         <!-- <choose>
             <when condition="@(context.Variables.ContainsKey(&quot;tokenlimit-&quot;+(string)context.Request.Foundry.Deployment) || context.Variables.ContainsKey(&quot;tokenquota-&quot;+(string)context.Request.Foundry.Deployment))">
                 <set-variable name="deploymentName" value="@((string)context.Request.Foundry.Deployment)" />
@@ -78,9 +66,6 @@
     </backend>
     <outbound>
         <base />
-        <set-header name="X-ConditionCheck" exists-action="override">
-            <value>@(context.Variables.GetValueOrDefault<string>("X-ConditionCheck") + "")</value>
-        </set-header>
     </outbound>
     <on-error>
         <base />
