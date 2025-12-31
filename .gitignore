@@ -124,3 +124,8 @@ finagent_dynamic_app/backend/app/static/*
 temp.py
 gateway.config.json*
 finagent_dynamic_app/backend/apim/config/gateway.config.json
+finagent_dynamic_app/backend_dotnet/src/FinAgent.Backend/bin/*
+finagent_dynamic_app/backend_dotnet/src/FinAgent.Backend/obj/*
+finagent_dynamic_app/backend_dotnet/tests/FinAgent.Backend.Tests/bin/*
+finagent_dynamic_app/backend_dotnet/tests/FinAgent.Backend.Tests/obj/*
+finagent_dynamic_app/backend_dotnet/src/FinAgent.Backend/appsettings.Development.json
