@@ -49,6 +49,42 @@ Copy `patterns/backend/.env.example` to `.env`. Required:
 
 Frontend: create `patterns/frontend/.env` with `VITE_API_BASE_URL=http://localhost:8001`.
 
+## Azure Endpoints — Which to Use Where
+
+This project uses multiple Azure endpoints. Using the wrong one is a common source of 404 errors.
+
+| Env Variable | Endpoint Format | Used By |
+|---|---|---|
+| `AZURE_AI_ENDPOINT` | `https://<hub>.services.ai.azure.com/api/projects/<project>` | `azure.ai.agents.AgentsClient` — Foundry agents (create, list, run threads) |
+| `AZURE_AI_PROJECT_ENDPOINT` | `https://<project>.cognitiveservices.azure.com/` | `azure.ai.projects.AIProjectClient` — Foundry project client (evals, file upload) |
+| `AZURE_OPENAI_ENDPOINT` | `https://<resource>.openai.azure.com/` | `openai.AsyncAzureOpenAI` / MAF `OpenAIChatClient` — direct chat completions |
+
+**Key lesson**: `AgentsClient` requires the **AI Foundry project endpoint** (`AZURE_AI_ENDPOINT` with the `.services.ai.azure.com` format), NOT the Cognitive Services endpoint. Using `AZURE_AI_PROJECT_ENDPOINT` (cognitiveservices) with `AgentsClient` returns 404.
+
+```python
+# ✅ Correct — Foundry agents
+from azure.ai.agents import AgentsClient
+client = AgentsClient(
+    endpoint=os.getenv("AZURE_AI_ENDPOINT"),  # .services.ai.azure.com
+    credential=DefaultAzureCredential(),
+)
+
+# ❌ Wrong — will 404
+client = AgentsClient(
+    endpoint=os.getenv("AZURE_AI_PROJECT_ENDPOINT"),  # .cognitiveservices.azure.com
+    credential=DefaultAzureCredential(),
+)
+
+# ✅ Correct — direct OpenAI calls (MAF in-memory agents)
+from openai import AsyncAzureOpenAI
+oai = AsyncAzureOpenAI(
+    azure_endpoint=os.getenv("AZURE_OPENAI_ENDPOINT"),  # .openai.azure.com
+    azure_ad_token_provider=token_provider,
+)
+```
+
+**In-memory vs Foundry agents**: MAF `Agent(chat_client, ...)` with `OpenAIChatClient` creates ephemeral agents (not visible in Foundry). Use `AgentsClient.create_agent()` to create persistent Foundry agents that appear in the portal.
+
 ## Key Conventions
 
 - **Adding a new pattern**: Create a module directory under `patterns/backend/`, implement the orchestration function, then register it in `PATTERN_FUNCTIONS` in `api.py`. Update `frontend/src/data/patterns.ts` for catalog card metadata.
