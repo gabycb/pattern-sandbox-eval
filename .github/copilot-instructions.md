@@ -55,35 +55,53 @@ This project uses multiple Azure endpoints. Using the wrong one is a common sour
 
 | Env Variable | Endpoint Format | Used By |
 |---|---|---|
-| `AZURE_AI_ENDPOINT` | `https://<hub>.services.ai.azure.com/api/projects/<project>` | `azure.ai.agents.AgentsClient` — Foundry agents (create, list, run threads) |
-| `AZURE_AI_PROJECT_ENDPOINT` | `https://<project>.cognitiveservices.azure.com/` | `azure.ai.projects.AIProjectClient` — Foundry project client (evals, file upload) |
+| `AZURE_AI_ENDPOINT` | `https://<hub>.services.ai.azure.com/api/projects/<project>` | `azure.ai.projects.AIProjectClient` — Foundry agent registration + OpenAI client |
+| `AZURE_AI_PROJECT_ENDPOINT` | `https://<project>.cognitiveservices.azure.com/` | Legacy Cognitive Services endpoint (NOT for agent registration) |
 | `AZURE_OPENAI_ENDPOINT` | `https://<resource>.openai.azure.com/` | `openai.AsyncAzureOpenAI` / MAF `OpenAIChatClient` — direct chat completions |
 
-**Key lesson**: `AgentsClient` requires the **AI Foundry project endpoint** (`AZURE_AI_ENDPOINT` with the `.services.ai.azure.com` format), NOT the Cognitive Services endpoint. Using `AZURE_AI_PROJECT_ENDPOINT` (cognitiveservices) with `AgentsClient` returns 404.
+### SDK Choice: `azure.ai.projects` vs `azure.ai.agents`
+
+- **Use `azure.ai.projects` (v2.1.0)** — the current recommended SDK for this project. Available in the system Python / Jupyter kernel.
+- **Do NOT use `azure.ai.agents`** — not installed in the Jupyter kernel (`python3`), only in the backend venv.
+
+### Registering Foundry Agents (visible in portal)
 
 ```python
-# ✅ Correct — Foundry agents
-from azure.ai.agents import AgentsClient
-client = AgentsClient(
+from azure.ai.projects import AIProjectClient
+from azure.ai.projects.models import PromptAgentDefinition
+from azure.identity import DefaultAzureCredential
+
+# Client for agent registration
+client = AIProjectClient(
     endpoint=os.getenv("AZURE_AI_ENDPOINT"),  # .services.ai.azure.com
     credential=DefaultAzureCredential(),
 )
 
-# ❌ Wrong — will 404
-client = AgentsClient(
-    endpoint=os.getenv("AZURE_AI_PROJECT_ENDPOINT"),  # .cognitiveservices.azure.com
-    credential=DefaultAzureCredential(),
+# Register agent in Foundry
+client.agents.create_version(
+    agent_name="MyAgent",
+    definition=PromptAgentDefinition(model="gpt-4o", instructions="..."),
+    metadata={"source": "pattern_comparison"},
 )
 
-# ✅ Correct — direct OpenAI calls (MAF in-memory agents)
-from openai import AsyncAzureOpenAI
-oai = AsyncAzureOpenAI(
-    azure_endpoint=os.getenv("AZURE_OPENAI_ENDPOINT"),  # .openai.azure.com
-    azure_ad_token_provider=token_provider,
+# List existing agents (for idempotent get-or-create)
+existing = {a.name for a in client.agents.list()}
+
+# Run agents via OpenAI chat completions
+oai = client.get_openai_client()
+resp = oai.chat.completions.create(
+    model="gpt-4o",
+    messages=[{"role": "system", "content": instructions}, {"role": "user", "content": task}],
 )
 ```
 
-**In-memory vs Foundry agents**: MAF `Agent(chat_client, ...)` with `OpenAIChatClient` creates ephemeral agents (not visible in Foundry). Use `AgentsClient.create_agent()` to create persistent Foundry agents that appear in the portal.
+### Three ways to create agents
+
+| Method | Persistent in Foundry? | Execution |
+|---|---|---|
+| `AIProjectClient.agents.create_version()` | Yes — visible in portal | `client.get_openai_client().chat.completions.create()` |
+| MAF `Agent(chat_client, ...)` with `OpenAIChatClient` | No — ephemeral, in-memory only | MAF orchestrations (SequentialBuilder, etc.) |
+| `AgentsClient.create_agent()` (azure.ai.agents) | Yes — but requires azure-ai-agents package | Thread-based via `create_thread_and_process_run()` |
 
 ## Key Conventions
 
