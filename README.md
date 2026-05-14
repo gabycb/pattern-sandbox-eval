@@ -4,6 +4,43 @@
 
 ---
 
+## Repository Structure
+
+```mermaid
+graph TD
+    ROOT[patterns/] --> BE[backend/]
+    ROOT --> FE[frontend/]
+    ROOT --> DOCS[docs/]
+
+    BE --> SEQ[sequential/]
+    BE --> CONC[concurrent_pattern/]
+    BE --> GC[group_chat/]
+    BE --> HO[handoff/]
+    BE --> MAG[magentic/]
+    BE --> REACT[react/]
+    BE --> BT[bank_teller/ ⭐ NEW]
+    BE --> PC[pattern_comparison.ipynb ⭐ NEW]
+    BE --> COMMON[common/agents.py]
+
+    BT --> KB[knowledge_base.py]
+    BT --> EVAL[bank_teller_eval.ipynb]
+    BT --> SEQ_R[sequential_retrieval.py]
+    BT --> HO_R[handoff_retrieval.py]
+    BT --> DS[eval_dataset.py]
+
+    DOCS --> GUIDE[orchestration-patterns-guide.md ⭐ NEW]
+
+    FE --> SRC[src/ — React + Vite + Tailwind]
+
+    style BT fill:#d4edda,stroke:#28a745
+    style PC fill:#d4edda,stroke:#28a745
+    style GUIDE fill:#d4edda,stroke:#28a745
+```
+
+> ⭐ **NEW** = Added in this fork (not in the original repo)
+
+---
+
 ## What This Fork Adds
 
 This fork extends the original repo with evaluation tooling, customer-facing documentation, and a hands-on comparison project.
