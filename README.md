@@ -8,9 +8,9 @@
 
 ```mermaid
 graph TD
-    ROOT[patterns/] --> BE[backend/]
-    ROOT --> FE[frontend/]
-    ROOT --> DOCS[docs/]
+    ROOT[["📁 patterns/"]] --> BE[["📁 backend/"]]
+    ROOT --> FE[["📁 frontend/"]]
+    ROOT --> DOCS[["📁 docs/"]]
 
     BE --> SEQ[sequential/]
     BE --> CONC[concurrent_pattern/]
@@ -18,8 +18,8 @@ graph TD
     BE --> HO[handoff/]
     BE --> MAG[magentic/]
     BE --> REACT[react/]
-    BE --> BT[bank_teller/ ⭐ NEW]
-    BE --> PC[pattern_comparison.ipynb ⭐ NEW]
+    BE --> BT{{"🆕 bank_teller/"}}
+    BE --> PC{{"🆕 pattern_comparison.ipynb"}}
     BE --> COMMON[common/agents.py]
 
     BT --> KB[knowledge_base.py]
@@ -28,16 +28,23 @@ graph TD
     BT --> HO_R[handoff_retrieval.py]
     BT --> DS[eval_dataset.py]
 
-    DOCS --> GUIDE[orchestration-patterns-guide.md ⭐ NEW]
+    DOCS --> GUIDE{{"🆕 orchestration-patterns-guide.md"}}
 
     FE --> SRC[src/ — React + Vite + Tailwind]
 
-    style BT fill:#d4edda,stroke:#28a745
-    style PC fill:#d4edda,stroke:#28a745
-    style GUIDE fill:#d4edda,stroke:#28a745
+    %% Accessible styling: shape + color + icon triple-encoding
+    %% Using blue (#0969DA) for new items — passes WCAG AA on white
+    %% Existing items use neutral gray — no color-only distinction
+    style ROOT fill:#f6f8fa,stroke:#656d76,stroke-width:2px,color:#1f2328
+    style BE fill:#f6f8fa,stroke:#656d76,stroke-width:2px,color:#1f2328
+    style FE fill:#f6f8fa,stroke:#656d76,stroke-width:1px,color:#1f2328
+    style DOCS fill:#f6f8fa,stroke:#656d76,stroke-width:1px,color:#1f2328
+    style BT fill:#ddf4ff,stroke:#0969da,stroke-width:2px,color:#0550ae
+    style PC fill:#ddf4ff,stroke:#0969da,stroke-width:2px,color:#0550ae
+    style GUIDE fill:#ddf4ff,stroke:#0969da,stroke-width:2px,color:#0550ae
 ```
 
-> ⭐ **NEW** = Added in this fork (not in the original repo)
+> **🆕 = Added in this fork** — distinguished by hexagonal shape, blue border, and 🆕 icon (triple-encoded for accessibility).
 
 ---
 
